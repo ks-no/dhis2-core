@@ -129,6 +129,8 @@ public class JpaQueryUtils
         {
         case EQUALS:
             return builder.equal( path, attrValue );
+        case NOT_EQUALS:
+            return builder.notEqual( path, attrValue );
         case ENDING_LIKE:
             return builder.like( path, "%" + attrValue );
         case NOT_ENDING_LIKE:
@@ -139,6 +141,8 @@ public class JpaQueryUtils
             return builder.notLike( path, attrValue + "%" );
         case ANYWHERE:
             return builder.like( path, "%" + attrValue + "%" );
+        case NOT_ANYWHERE:
+            return builder.notLike( path, "%" + attrValue + "%" );
         case LIKE:
             return builder.like( path, (String) attrValue ); // assume user
                                                              // provide the wild
@@ -157,14 +161,16 @@ public class JpaQueryUtils
     {
 
         EQUALS( "eq" ), // Match exactly
+        NOT_EQUALS( "neq" ),
         ANYWHERE( "any" ), // Like search with '%' prefix and suffix
+        NOT_ANYWHERE( "nany" ), // Like search with '%' prefix and suffix
         STARTING_LIKE( "sl" ), // Like search and add a '%' prefix before
                                // searching
         NOT_STARTING_LIKE( "nsl" ),
         LIKE( "li" ), // User provides the wild card
+        NOT_LIKE( "nli" ), // User provides the wild card
         ENDING_LIKE( "el" ), // LIKE search and add a '%' suffix before
                              // searching
-        NOT_LIKE( "nli" ),
         NOT_ENDING_LIKE( "nel" );
 
         private final String code;
@@ -383,7 +389,7 @@ public class JpaQueryUtils
             + " and " + JsonbFunctions.CHECK_USER_ACCESS + "( %1$s, '%2$s', '%4$s' ) = true )  "
             + (StringUtils.isEmpty( groupsIds ) ? ""
                 : " or ( " + JsonbFunctions.HAS_USER_GROUP_IDS + "( %1$s, '%3$s') = true "
-                    + " and " + JsonbFunctions.CHECK_USER_GROUPS_ACCESS + "( %1$s, '%3$s', '%4$s') = true )");
+                    + " and " + JsonbFunctions.CHECK_USER_GROUPS_ACCESS + "( %1$s, '%4$s', '%3$s') = true )");
 
         return String.format( sql, sharingColumn, user.getUid(), groupsIds, access );
     }

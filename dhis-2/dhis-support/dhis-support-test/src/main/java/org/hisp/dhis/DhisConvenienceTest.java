@@ -124,6 +124,8 @@ import org.hisp.dhis.program.AnalyticsType;
 import org.hisp.dhis.program.Program;
 import org.hisp.dhis.program.ProgramDataElementDimensionItem;
 import org.hisp.dhis.program.ProgramIndicator;
+import org.hisp.dhis.program.ProgramInstance;
+import org.hisp.dhis.program.ProgramSection;
 import org.hisp.dhis.program.ProgramStage;
 import org.hisp.dhis.program.ProgramStageDataElement;
 import org.hisp.dhis.program.ProgramStageSection;
@@ -284,6 +286,19 @@ public abstract class DhisConvenienceTest
     {
         DateTime dateTime = new DateTime( s );
         return dateTime.toDate();
+    }
+
+    /**
+     * Creates a date. Alias for {@code getDate}.
+     *
+     * @param year the year.
+     * @param month the month.
+     * @param day the day of month.
+     * @return a date.
+     */
+    public static Date date( int year, int month, int day )
+    {
+        return getDate( year, month, day );
     }
 
     /**
@@ -580,6 +595,12 @@ public abstract class DhisConvenienceTest
      * @param categoryCombo the category combo.
      * @param categoryOptions the category options.
      * @return CategoryOptionCombo
+     *
+     *         Note: All the Category Options (COs) should be added to the
+     *         Category Option Combo (COC) before the COC is added to the COs.
+     *         That way the hashCode for the COC is stable when it is added to
+     *         the CO HashSets because the COC hashCode depends on its linked
+     *         COs.
      */
     public static CategoryOptionCombo createCategoryOptionCombo( CategoryCombo categoryCombo,
         CategoryOption... categoryOptions )
@@ -592,6 +613,10 @@ public abstract class DhisConvenienceTest
         for ( CategoryOption categoryOption : categoryOptions )
         {
             categoryOptionCombo.getCategoryOptions().add( categoryOption );
+        }
+
+        for ( CategoryOption categoryOption : categoryOptions )
+        {
             categoryOption.getCategoryOptionCombos().add( categoryOptionCombo );
         }
 
@@ -1635,6 +1660,21 @@ public abstract class DhisConvenienceTest
         return createProgramIndicator( uniqueCharacter, AnalyticsType.EVENT, program, expression, filter );
     }
 
+    public static ProgramInstance createProgramInstance( Program program, TrackedEntityInstance tei,
+        OrganisationUnit organisationUnit )
+    {
+        ProgramInstance programInstance = new ProgramInstance( program, tei, organisationUnit );
+        programInstance.setAutoFields();
+
+        programInstance.setProgram( program );
+        programInstance.setEntityInstance( tei );
+        programInstance.setOrganisationUnit( organisationUnit );
+        programInstance.setEnrollmentDate( new Date() );
+        programInstance.setIncidentDate( new Date() );
+
+        return programInstance;
+    }
+
     public static ProgramIndicator createProgramIndicator( char uniqueCharacter, AnalyticsType analyticsType,
         Program program, String expression, String filter )
     {
@@ -2380,6 +2420,11 @@ public abstract class DhisConvenienceTest
         return new ProgramDataElementDimensionItem( pr, de );
     }
 
+    protected void removeUserAccess( IdentifiableObject object )
+    {
+        object.getSharing().resetUserAccesses();
+    }
+
     protected void enableDataSharing( User user, IdentifiableObject object, String access )
     {
         object.getSharing().resetUserAccesses();
@@ -2474,17 +2519,27 @@ public abstract class DhisConvenienceTest
             credentials -> credentials.getUserAuthorityGroups().addAll( asList( roles ) ) );
     }
 
-    protected final User addUser( char uniqueCharacter, Consumer<UserCredentials> init )
+    protected final User addUser( char uniqueCharacter, Consumer<UserCredentials> consumer )
     {
         User user = createUser( uniqueCharacter );
         UserCredentials credentials = createUserCredentials( uniqueCharacter, user );
-        if ( init != null )
+        if ( consumer != null )
         {
-            init.accept( credentials );
+            consumer.accept( credentials );
         }
         userService.addUser( user );
         userService.addUserCredentials( credentials );
         return user;
+    }
+
+    protected final ProgramSection createProgramSection( char uniqueCharacter, Program program )
+    {
+        ProgramSection programSection = new ProgramSection();
+        programSection.setProgram( program );
+        programSection.setSortOrder( 0 );
+        programSection.setName( "ProgramSection" + uniqueCharacter );
+        programSection.setAutoFields();
+        return programSection;
     }
 
 }

@@ -27,21 +27,32 @@
  */
 package org.hisp.dhis.predictor;
 
-import static com.google.common.base.Preconditions.checkNotNull;
 import static org.hisp.dhis.common.OrganisationUnitSelectionMode.DESCENDANTS;
+import static org.hisp.dhis.commons.collection.CollectionUtils.isEmpty;
+import static org.hisp.dhis.datavalue.DataValueStore.DDV_QUEUE_TIMEOUT_UNIT;
+import static org.hisp.dhis.datavalue.DataValueStore.DDV_QUEUE_TIMEOUT_VALUE;
+import static org.hisp.dhis.datavalue.DataValueStore.END_OF_DDV_DATA;
+import static org.hisp.dhis.system.util.MathUtils.addDoubleObjects;
+import static org.hisp.dhis.system.util.ValidationUtils.getObjectValue;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
+import lombok.RequiredArgsConstructor;
 
 import org.hisp.dhis.category.CategoryOptionCombo;
 import org.hisp.dhis.category.CategoryService;
+import org.hisp.dhis.common.DimensionalItemObject;
+import org.hisp.dhis.common.FoundDimensionItemValue;
+import org.hisp.dhis.common.MapMap;
+import org.hisp.dhis.common.MapMapMap;
 import org.hisp.dhis.commons.collection.CachingMap;
 import org.hisp.dhis.dataelement.DataElement;
 import org.hisp.dhis.dataelement.DataElementOperand;
@@ -49,7 +60,6 @@ import org.hisp.dhis.datavalue.DataExportParams;
 import org.hisp.dhis.datavalue.DataValue;
 import org.hisp.dhis.datavalue.DataValueService;
 import org.hisp.dhis.datavalue.DeflatedDataValue;
-import org.hisp.dhis.datavalue.DeflatedDataValueConsumer;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.period.Period;
 
@@ -66,19 +76,10 @@ import org.hisp.dhis.period.Period;
  * organisation unit level.
  * <p>
  * This class maintains performance while limiting memory usage by using a
- * single data request (which means a single SQL query) with a callback method
- * for each data value. It collects data values until it has all the data for an
- * organisation unit, and then it returns them to the caller.
- * <p>
- * To allow for callbacks from below, but synchronous returns to above, a second
- * thread is used and coordinated with semaphores in a producer-consumer
- * pattern. Without the two threads, the caller (such as the predictor logic)
- * would have to be written to accept callbacks, meaning that any method local
- * variables needed between the initializing of data fetching and the fetching
- * of data values would have to be converted to instance variables. It also
- * means that the caller could not be doing anything else while waiting for the
- * callback, such as processing two data streams at once which the predictor
- * service does.
+ * single data request (which means a single SQL query) on a separate thread
+ * that provides results to this class through a blocking queue. This class then
+ * collects data values until it has all the data for an organisation unit, and
+ * then it returns them to the caller.
  * <p>
  * The returned data values may optionally include deleted values, because
  * predictor processing needs to know where the former predicted values are
@@ -87,13 +88,14 @@ import org.hisp.dhis.period.Period;
  * <p>
  * For reliability, if there is an exception on the second thread, the thread is
  * terminated and the exception is re-thrown in the main thread when data is
- * next requested from the caller. This makes sure that the exception is not
- * properly handled by the main thread.
+ * next requested from the caller. This makes sure that the exception is
+ * properly reported by the main thread.
  *
  * @author Jim Grace
  */
+@RequiredArgsConstructor
 public class PredictionDataValueFetcher
-    implements Runnable, DeflatedDataValueConsumer
+    implements Runnable
 {
     private final DataValueService dataValueService;
 
@@ -103,15 +105,15 @@ public class PredictionDataValueFetcher
 
     private int orgUnitLevel;
 
-    private Set<Period> periods;
+    private Set<Period> queryPeriods;
+
+    private Set<Period> outputPeriods;
 
     private Set<DataElement> dataElements;
 
     private Set<DataElementOperand> dataElementOperands;
 
-    private boolean includeChildren = false;
-
-    private boolean includeDeleted = false;
+    private DataElementOperand outputDataElementOperand;
 
     private Map<String, OrganisationUnit> orgUnitLookup;
 
@@ -119,41 +121,25 @@ public class PredictionDataValueFetcher
 
     private Map<Long, Period> periodLookup;
 
-    private CachingMap<Long, CategoryOptionCombo> cocLookup = new CachingMap<>();
+    private CachingMap<Long, CategoryOptionCombo> cocLookup;
 
-    List<DeflatedDataValue> deflatedDataValues;
+    private DeflatedDataValue nextDeflatedDataValue;
 
-    private String producerOrgUnitPath;
-
-    private String consumerOrgUnitPath;
+    private OrganisationUnit nextOrgUnit;
 
     private RuntimeException producerException;
 
-    ExecutorService executor;
+    private ExecutorService executor;
 
-    private Semaphore producerSemaphore; // Acquired while producing data
+    private BlockingQueue<DeflatedDataValue> blockingQueue;
 
-    private Semaphore consumerSemaphore; // Acquired until data is consumed
-
-    private boolean endOfData; // No more data to fetch
-
-    private long semaphoreTimeout = 10;
-
-    private TimeUnit semaphoreTimeoutUnit = TimeUnit.MINUTES;
-
-    private static final String BEFORE_PATHS = "."; // Lexically before '/'
-
-    private static final String AFTER_PATHS = "0"; // Lexically after '/'
-
-    public PredictionDataValueFetcher( DataValueService dataValueService,
-        CategoryService categoryService )
-    {
-        checkNotNull( dataValueService );
-        checkNotNull( categoryService );
-
-        this.dataValueService = dataValueService;
-        this.categoryService = categoryService;
-    }
+    /**
+     * The blocking queue size was chosen after performance testing. A value of
+     * 1 performed slightly better than 2 or larger values. Since most of the
+     * values are just buffered after they are pulled from the queue, there is
+     * no benefit of incurring the slight overhead of a larger queue size.
+     */
+    private static final int DDV_BLOCKING_QUEUE_SIZE = 1;
 
     /**
      * Initializes for datavalue retrieval.
@@ -161,40 +147,47 @@ public class PredictionDataValueFetcher
      * @param currentUserOrgUnits orgUnits assigned to current user.
      * @param orgUnitLevel level of organisation units to fetch.
      * @param orgUnits organisation units to fetch.
-     * @param periods periods to fetch.
+     * @param queryPeriods periods to fetch.
+     * @param outputPeriods predictor output periods.
      * @param dataElements data elements to fetch.
      * @param dataElementOperands data element operands to fetch.
      */
-    public void init( Set<OrganisationUnit> currentUserOrgUnits, int orgUnitLevel, List<OrganisationUnit> orgUnits,
-        Set<Period> periods, Set<DataElement> dataElements, Set<DataElementOperand> dataElementOperands )
+    public void init(
+        Set<OrganisationUnit> currentUserOrgUnits, int orgUnitLevel, List<OrganisationUnit> orgUnits,
+        Set<Period> queryPeriods, Set<Period> outputPeriods, Set<DataElement> dataElements,
+        Set<DataElementOperand> dataElementOperands, DataElementOperand outputDataElementOperand )
     {
         this.currentUserOrgUnits = currentUserOrgUnits;
         this.orgUnitLevel = orgUnitLevel;
-        this.periods = periods;
+        this.queryPeriods = queryPeriods;
+        this.outputPeriods = outputPeriods;
         this.dataElements = dataElements;
         this.dataElementOperands = dataElementOperands;
+        this.outputDataElementOperand = outputDataElementOperand;
 
         orgUnitLookup = orgUnits.stream().collect( Collectors.toMap( OrganisationUnit::getPath, ou -> ou ) );
         dataElementLookup = dataElements.stream().collect( Collectors.toMap( DataElement::getId, de -> de ) );
-        dataElementLookup.putAll( dataElementOperands.stream().collect(
-            Collectors.toMap( d -> d.getDataElement().getId(), DataElementOperand::getDataElement ) ) );
-        periodLookup = periods.stream().collect( Collectors.toMap( Period::getId, p -> p ) );
+        dataElementLookup.putAll( dataElementOperands.stream().map( DataElementOperand::getDataElement )
+            .distinct().collect( Collectors.toMap( DataElement::getId, d -> d ) ) );
+        periodLookup = queryPeriods.stream().collect( Collectors.toMap( Period::getId, p -> p ) );
+        cocLookup = new CachingMap<>();
 
-        deflatedDataValues = new ArrayList<>();
-        producerOrgUnitPath = AFTER_PATHS;
-        consumerOrgUnitPath = BEFORE_PATHS;
-        endOfData = false;
         producerException = null;
 
-        producerSemaphore = new Semaphore( 1 );
-        consumerSemaphore = new Semaphore( 1 );
+        blockingQueue = new ArrayBlockingQueue<>( DDV_BLOCKING_QUEUE_SIZE );
 
-        producerSemaphore.acquireUninterruptibly();
-        consumerSemaphore.acquireUninterruptibly();
+        if ( isEmpty( dataElements ) && isEmpty( dataElementOperands ) )
+        {
+            nextOrgUnit = null; // There will be no data
+
+            return;
+        }
 
         executor = Executors.newSingleThreadExecutor();
         executor.execute( this ); // Invoke run() on another thread
         executor.shutdown();
+
+        getNextDeflatedDataValue(); // Prime the algorithm with the first value.
     }
 
     /**
@@ -206,14 +199,14 @@ public class PredictionDataValueFetcher
         DataExportParams params = new DataExportParams();
         params.setDataElements( dataElements );
         params.setDataElementOperands( dataElementOperands );
-        params.setPeriods( periods );
+        params.setPeriods( queryPeriods );
         params.setOrganisationUnits( currentUserOrgUnits );
         params.setOuMode( DESCENDANTS );
         params.setOrgUnitLevel( orgUnitLevel );
-        params.setCallback( this );
+        params.setBlockingQueue( blockingQueue );
         params.setOrderByOrgUnitPath( true );
-        params.setIncludeChildren( includeChildren );
-        params.setIncludeDeleted( includeDeleted );
+        params.setIncludeChildren( true );
+        params.setIncludeDeleted( true );
 
         try
         {
@@ -221,143 +214,43 @@ public class PredictionDataValueFetcher
         }
         catch ( RuntimeException ex )
         {
-            producerException = ex;
+            producerException = ex; // Tell the main thread
+
+            queueEndOfDataMarker(); // Wake up main thread if needed
+
+            throw ex; // Log the exception
         }
-
-        endOfData = true; // No more data will be produced
-
-        producerSemaphore.release(); // The last orgUnit is ready to consume
     }
 
     /**
-     * In a separate thread, handles a callback with a fetched data value.
-     *
-     * @param ddv the deflated data value fetched.
-     */
-    @Override
-    public void consume( DeflatedDataValue ddv )
-    {
-        if ( producerOrgUnitPath.equals( AFTER_PATHS ) )
-        {
-            producerOrgUnitPath = truncatePathToLevel( ddv.getSourcePath() );
-        }
-
-        if ( !ddv.getSourcePath().startsWith( producerOrgUnitPath ) )
-        {
-            producerSemaphore.release(); // Data is ready to consume
-
-            if ( !tryAcquire( consumerSemaphore ) ) // Wait until data consumed
-            {
-                throw new IllegalStateException( "handle could not acquire consumer semaphore" );
-            }
-
-            deflatedDataValues = new ArrayList<>();
-
-            producerOrgUnitPath = truncatePathToLevel( ddv.getSourcePath() );
-        }
-
-        deflatedDataValues.add( ddv );
-    }
-
-    /**
-     * In the main thread, gets the data values for a single organisation unit.
+     * In the main thread, gets prediction data for the next organisation unit.
      * <p>
      * Note that "inflating" the data values from their deflated form must be
      * done in the main thread so as not to upset the DataValue's Hibernate
      * properties.
      *
-     * @param orgUnit the organisation unit to get the data values for
-     * @return the list of data values
+     * @return the prediction data
      */
-    public List<DataValue> getDataValues( OrganisationUnit orgUnit )
+    public PredictionData getData()
     {
-        if ( !tryAcquire( producerSemaphore ) ) // Wait until data is ready
+        if ( nextOrgUnit == null )
         {
-            throw new IllegalStateException( "getDataValues could not acquire producer semaphore" );
+            return null;
         }
 
-        if ( producerException != null )
+        List<DeflatedDataValue> deflatedDataValues = new ArrayList<>();
+
+        OrganisationUnit startingOrgUnit = nextOrgUnit;
+
+        do
         {
-            throw producerException;
+            deflatedDataValues.add( nextDeflatedDataValue );
+
+            getNextDeflatedDataValue();
         }
+        while ( startingOrgUnit.equals( nextOrgUnit ) );
 
-        if ( orgUnit.getPath().compareTo( consumerOrgUnitPath ) <= 0 )
-        {
-            throw new IllegalArgumentException( "getDataValues out of order, after " + consumerOrgUnitPath
-                + " called with " + orgUnit.toString() );
-        }
-
-        consumerOrgUnitPath = orgUnit.getPath();
-
-        if ( consumerOrgUnitPath.compareTo( producerOrgUnitPath ) < 0 )
-        {
-            producerSemaphore.release(); // Release so we can acquire it next
-                                         // time
-
-            return new ArrayList<>(); // No data produced for this orgUnit
-        }
-
-        if ( !consumerOrgUnitPath.equals( producerOrgUnitPath ) )
-        {
-            throw new IllegalArgumentException( "getDataValues ready for " + producerOrgUnitPath
-                + " but called with " + orgUnit.toString() );
-        }
-
-        List<DataValue> dataValues = deflatedDataValues.stream()
-            .map( this::inflateDataValue ).collect( Collectors.toList() );
-
-        consumerSemaphore.release(); // Data now consumed (in local variable)
-
-        if ( endOfData )
-        {
-            producerOrgUnitPath = AFTER_PATHS;
-
-            producerSemaphore.release(); // No more data will be produced
-        }
-
-        return dataValues;
-    }
-
-    // -------------------------------------------------------------------------
-    // Set methods
-    // -------------------------------------------------------------------------
-
-    /**
-     * Sets whether the data should return aggregated to the parent org unit.
-     *
-     * @param includeChildren whether the data should include child orgUnits.
-     * @return this object (for method chaining).
-     */
-    public PredictionDataValueFetcher setIncludeChildren( boolean includeChildren )
-    {
-        this.includeChildren = includeChildren;
-        return this;
-    }
-
-    /**
-     * Sets whether the data should include deleted values.
-     *
-     * @param includeDeleted whether the data should include deleted values.
-     * @return this object (for method chaining).
-     */
-    public PredictionDataValueFetcher setIncludeDeleted( boolean includeDeleted )
-    {
-        this.includeDeleted = includeDeleted;
-        return this;
-    }
-
-    /**
-     * Sets the internal semaphore timeout value. This can be used to test the
-     * timeout functionality faster than if the test had to wait for the default
-     * timeout value.
-     *
-     * @param semaphoreTimeout semaphore timeout value.
-     * @param semaphoreTimeoutUnit units of the timeout value.
-     */
-    public void setSemaphoreTimeout( long semaphoreTimeout, TimeUnit semaphoreTimeoutUnit )
-    {
-        this.semaphoreTimeout = semaphoreTimeout;
-        this.semaphoreTimeoutUnit = semaphoreTimeoutUnit;
+        return getPredictionData( startingOrgUnit, deflatedDataValues );
     }
 
     // -------------------------------------------------------------------------
@@ -365,11 +258,44 @@ public class PredictionDataValueFetcher
     // -------------------------------------------------------------------------
 
     /**
+     * Gets the next deflated data value. Remembers it and its path.
+     */
+    private void getNextDeflatedDataValue()
+    {
+        nextDeflatedDataValue = dequeueDeflatedDataValue();
+
+        checkForProducerException(); // Check for exception during dequeue
+
+        if ( nextDeflatedDataValue == END_OF_DDV_DATA )
+        {
+            nextOrgUnit = null; // No more data
+
+            return;
+        }
+
+        nextOrgUnit = orgUnitLookup.get( truncatePathToLevel( nextDeflatedDataValue.getSourcePath() ) );
+    }
+
+    /**
+     * Dequeues the next {@see DeflatedDataValue} from the database feed
+     */
+    private DeflatedDataValue dequeueDeflatedDataValue()
+    {
+        try
+        {
+            return blockingQueue.poll( DDV_QUEUE_TIMEOUT_VALUE, DDV_QUEUE_TIMEOUT_UNIT );
+        }
+        catch ( InterruptedException e )
+        {
+            Thread.currentThread().interrupt();
+
+            throw new IllegalStateException( "could not fetch next DeflatedDataValue" );
+        }
+    }
+
+    /**
      * Truncates a path from a deflated data value to the level of the
      * organisation units we are looking for now.
-     *
-     * @param path the orgUnit path from the deflated data value.
-     * @return the path truncated to the level we are now processing.
      */
     private String truncatePathToLevel( String path )
     {
@@ -377,28 +303,37 @@ public class PredictionDataValueFetcher
     }
 
     /**
-     * Try to acquire a semaphore, within a certain time period.
-     *
-     * @param semaphore the semaphore to acquire.
-     * @return true if it was acquired, else false.
+     * Gets prediction data for an orgUnit from a list of deflated data values.
      */
-    private boolean tryAcquire( Semaphore semaphore )
+    private PredictionData getPredictionData( OrganisationUnit orgUnit, List<DeflatedDataValue> deflatedDataValues )
     {
-        try
+        MapMapMap<CategoryOptionCombo, Period, DimensionalItemObject, Object> map = new MapMapMap<>();
+
+        List<DataValue> oldPredictions = new ArrayList<>();
+
+        for ( DeflatedDataValue ddv : deflatedDataValues )
         {
-            return semaphore.tryAcquire( semaphoreTimeout, semaphoreTimeoutUnit );
+            DataValue dv = inflateDataValue( ddv );
+
+            if ( !dv.isDeleted() )
+            {
+                addValueToMap( dv, map );
+            }
+
+            if ( ddv.getSourcePath().equals( dv.getSource().getPath() )
+                && ddv.getDataElementId() == outputDataElementOperand.getDataElement().getId()
+                && ddv.getCategoryOptionComboId() == (outputDataElementOperand.getCategoryOptionCombo().getId())
+                && outputPeriods.contains( dv.getPeriod() ) )
+            {
+                oldPredictions.add( dv );
+            }
         }
-        catch ( InterruptedException e )
-        {
-            return false;
-        }
+
+        return new PredictionData( orgUnit, mapToValues( orgUnit, map ), oldPredictions );
     }
 
     /**
-     * "Inflate" a deflated data value, using our caches.
-     *
-     * @param ddv the deflated data value.
-     * @return the regular ("inflated") data value.
+     * "Inflates" a deflated data value, using our caches.
      */
     private DataValue inflateDataValue( DeflatedDataValue ddv )
     {
@@ -416,5 +351,118 @@ public class PredictionDataValueFetcher
 
         return new DataValue( dataElement, period, orgUnit, categoryOptionCombo, attributeOptionCombo, ddv.getValue(),
             ddv.getStoredBy(), ddv.getLastUpdated(), ddv.getComment(), ddv.isFollowup(), ddv.isDeleted() );
+    }
+
+    /**
+     * Adds a non-deleted value to the value map.
+     * <p>
+     * The two types of dimensional item object that are needed from the data
+     * value table are DataElement (the sum of all category option combos for
+     * that data element) and DataElementOperand (a particular combination of
+     * DataElement and CategoryOptionCombo).
+     */
+    private void addValueToMap( DataValue dv,
+        MapMapMap<CategoryOptionCombo, Period, DimensionalItemObject, Object> map )
+    {
+        Object value = getObjectValue( dv.getValue(), dv.getDataElement().getValueType() );
+
+        if ( value != null )
+        {
+            DataElementOperand dataElementOperand = new DataElementOperand(
+                dv.getDataElement(), dv.getCategoryOptionCombo() );
+
+            addToMap( dataElementOperand, dataElementOperands, dv, value, map );
+
+            addToMap( dv.getDataElement(), dataElements, dv, value, map );
+        }
+    }
+
+    /**
+     * Adds the DataElementOperand or the DataElement value to existing data.
+     * <p>
+     * This is needed because we may get multiple data values that need to be
+     * aggregated to the same item value. In the case of a
+     * DimensionalItemObject, this may be multiple values from children
+     * organisation units. In the case of a DataElement, this may be multiple
+     * value from children organisation units and/or it may be multiple
+     * disaggregated values that need to be summed for the data element.
+     * <p>
+     * Note that a single data value may contribute to a DataElementOperand
+     * value, a DataElement value, or both.
+     */
+    private void addToMap( DimensionalItemObject item, Set<? extends DimensionalItemObject> items,
+        DataValue dv, Object value, MapMapMap<CategoryOptionCombo, Period, DimensionalItemObject, Object> map )
+    {
+        if ( !items.contains( item ) )
+        {
+            return;
+        }
+
+        Object valueSoFar = map.getValue( dv.getAttributeOptionCombo(), dv.getPeriod(), item );
+
+        Object valueToStore = (valueSoFar == null) ? value : addDoubleObjects( value, valueSoFar );
+
+        map.putEntry( dv.getAttributeOptionCombo(), dv.getPeriod(), item, valueToStore );
+    }
+
+    /**
+     * Convert the value map to a list of found values.
+     */
+    private List<FoundDimensionItemValue> mapToValues( OrganisationUnit orgUnit,
+        MapMapMap<CategoryOptionCombo, Period, DimensionalItemObject, Object> map )
+    {
+        List<FoundDimensionItemValue> values = new ArrayList<>();
+
+        for ( Map.Entry<CategoryOptionCombo, MapMap<Period, DimensionalItemObject, Object>> e1 : map.entrySet() )
+        {
+            CategoryOptionCombo aoc = e1.getKey();
+
+            for ( Map.Entry<Period, Map<DimensionalItemObject, Object>> e2 : e1.getValue().entrySet() )
+            {
+                Period period = e2.getKey();
+
+                for ( Map.Entry<DimensionalItemObject, Object> e3 : e2.getValue().entrySet() )
+                {
+                    DimensionalItemObject obj = e3.getKey();
+                    Object value = e3.getValue();
+
+                    values.add( new FoundDimensionItemValue( orgUnit, period, aoc, obj, value ) );
+                }
+            }
+        }
+
+        return values;
+    }
+
+    /**
+     * Checks for an unexpected exception in the producer thread, and if found,
+     * throws it on the main thread.
+     */
+    private void checkForProducerException()
+    {
+        if ( producerException != null )
+        {
+            throw producerException;
+        }
+    }
+
+    /**
+     * Adds the end of data marker to the queue. This is used in case there is
+     * an unexpected runtime exception in the producer thread, and the consumer
+     * (main) thread is waiting for a data value. This allows the main thread to
+     * wake up and handle (rethrow) the exception.
+     */
+    private void queueEndOfDataMarker()
+    {
+        try
+        {
+            blockingQueue.offer( END_OF_DDV_DATA, DDV_QUEUE_TIMEOUT_VALUE, DDV_QUEUE_TIMEOUT_UNIT );
+        }
+        catch ( InterruptedException ex )
+        {
+            Thread.currentThread().interrupt();
+
+            throw new IllegalStateException( "could not add end of deflated data values marker" );
+        }
     }
 }

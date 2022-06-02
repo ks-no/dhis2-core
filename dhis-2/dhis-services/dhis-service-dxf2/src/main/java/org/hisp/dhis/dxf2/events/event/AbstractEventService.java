@@ -50,7 +50,6 @@ import static org.hisp.dhis.dxf2.events.event.EventSearchParams.PAGER_META_KEY;
 import static org.hisp.dhis.system.notification.NotificationLevel.ERROR;
 import static org.hisp.dhis.util.DateUtils.getMediumDateString;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -73,7 +72,6 @@ import org.hisp.dhis.category.CategoryService;
 import org.hisp.dhis.common.CodeGenerator;
 import org.hisp.dhis.common.Grid;
 import org.hisp.dhis.common.GridHeader;
-import org.hisp.dhis.common.IdScheme;
 import org.hisp.dhis.common.IdSchemes;
 import org.hisp.dhis.common.IdentifiableObjectManager;
 import org.hisp.dhis.common.IllegalQueryException;
@@ -102,12 +100,10 @@ import org.hisp.dhis.dxf2.importsummary.ImportSummary;
 import org.hisp.dhis.event.EventStatus;
 import org.hisp.dhis.eventdatavalue.EventDataValue;
 import org.hisp.dhis.fileresource.FileResourceService;
-import org.hisp.dhis.hibernate.HibernateProxyUtils;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.organisationunit.OrganisationUnitService;
 import org.hisp.dhis.program.EventSyncService;
 import org.hisp.dhis.program.Program;
-import org.hisp.dhis.program.ProgramInstance;
 import org.hisp.dhis.program.ProgramInstanceService;
 import org.hisp.dhis.program.ProgramService;
 import org.hisp.dhis.program.ProgramStageDataElement;
@@ -117,6 +113,7 @@ import org.hisp.dhis.program.ProgramType;
 import org.hisp.dhis.query.QueryService;
 import org.hisp.dhis.scheduling.JobConfiguration;
 import org.hisp.dhis.schema.SchemaService;
+import org.hisp.dhis.security.Authorities;
 import org.hisp.dhis.system.grid.ListGrid;
 import org.hisp.dhis.system.notification.NotificationLevel;
 import org.hisp.dhis.system.notification.Notifier;
@@ -202,7 +199,7 @@ public abstract class AbstractEventService implements EventService
 
     protected EventServiceContextBuilder eventServiceContextBuilder;
 
-    protected Cache<DataElement> dataElementCache;
+    protected Cache<Boolean> dataElementCache;
 
     private static final int FLUSH_FREQUENCY = 100;
 
@@ -281,11 +278,11 @@ public abstract class AbstractEventService implements EventService
     @Override
     public Events getEvents( EventSearchParams params )
     {
-        validate( params );
-
-        List<OrganisationUnit> organisationUnits = getOrganisationUnits( params );
-
         User user = currentUserService.getCurrentUser();
+
+        validate( params, user );
+
+        List<OrganisationUnit> organisationUnits = getOrganisationUnits( params, user );
 
         params.handleCurrentUserSelectionMode( user );
 
@@ -311,15 +308,7 @@ public abstract class AbstractEventService implements EventService
 
         List<Event> eventList = eventStore.getEvents( params, organisationUnits, Collections.emptyMap() );
 
-        for ( Event event : eventList )
-        {
-            if ( trackerOwnershipAccessManager.hasAccess( user,
-                entityInstanceService.getTrackedEntityInstance( event.getTrackedEntityInstance() ),
-                programService.getProgram( event.getProgram() ) ) )
-            {
-                events.getEvents().add( event );
-            }
-        }
+        events.setEvents( eventList );
 
         return events;
     }
@@ -340,7 +329,7 @@ public abstract class AbstractEventService implements EventService
             throw new IllegalQueryException( "Program stage should have at least one data element" );
         }
 
-        List<OrganisationUnit> organisationUnits = getOrganisationUnits( params );
+        List<OrganisationUnit> organisationUnits = getOrganisationUnits( params, user );
 
         params.handleCurrentUserSelectionMode( user );
 
@@ -401,21 +390,6 @@ public abstract class AbstractEventService implements EventService
         for ( Map<String, String> event : events )
         {
             grid.addRow();
-
-            if ( params.getProgramStage().getProgram().isRegistration() && user != null || !user.isSuper() )
-            {
-                ProgramInstance enrollment = programInstanceService
-                    .getProgramInstance( event.get( EVENT_ENROLLMENT_ID ) );
-
-                if ( enrollment != null && enrollment.getEntityInstance() != null )
-                {
-                    if ( !trackerOwnershipAccessManager.hasAccess( user, enrollment.getEntityInstance(),
-                        params.getProgramStage().getProgram() ) )
-                    {
-                        continue;
-                    }
-                }
-            }
 
             for ( String col : STATIC_EVENT_COLUMNS )
             {
@@ -481,9 +455,9 @@ public abstract class AbstractEventService implements EventService
     @Override
     public EventRows getEventRows( EventSearchParams params )
     {
-        List<OrganisationUnit> organisationUnits = getOrganisationUnits( params );
-
         User user = currentUserService.getCurrentUser();
+
+        List<OrganisationUnit> organisationUnits = getOrganisationUnits( params, user );
 
         EventRows eventRows = new EventRows();
 
@@ -606,18 +580,8 @@ public abstract class AbstractEventService implements EventService
 
         for ( EventDataValue dataValue : dataValues )
         {
-
-            DataElement dataElement = getDataElement( IdScheme.UID, dataValue.getDataElement() );
-
-            if ( dataElement != null )
+            if ( getDataElement( user.getUid(), dataValue.getDataElement() ) )
             {
-                errors = trackerAccessManager.canRead( user, programStageInstance, dataElement, true );
-
-                if ( !errors.isEmpty() )
-                {
-                    continue;
-                }
-
                 DataValue value = new DataValue();
                 value.setCreated( DateUtils.getIso8601NoTz( dataValue.getCreated() ) );
                 value.setCreatedByUserInfo( dataValue.getCreatedByUserInfo() );
@@ -842,31 +806,125 @@ public abstract class AbstractEventService implements EventService
     // HELPERS
     // -------------------------------------------------------------------------
 
-    private List<OrganisationUnit> getOrganisationUnits( EventSearchParams params )
+    private List<OrganisationUnit> getOrganisationUnits( EventSearchParams params, User user )
     {
-        List<OrganisationUnit> organisationUnits = new ArrayList<>();
-
-        OrganisationUnit orgUnit = params.getOrgUnit();
         OrganisationUnitSelectionMode orgUnitSelectionMode = params.getOrgUnitSelectionMode();
 
-        if ( params.getOrgUnit() != null )
+        if ( orgUnitSelectionMode == null )
         {
-            if ( OrganisationUnitSelectionMode.DESCENDANTS.equals( orgUnitSelectionMode ) )
+            if ( params.getOrgUnit() != null )
             {
-                organisationUnits.addAll( organisationUnitService.getOrganisationUnitWithChildren( orgUnit.getUid() ) );
+                return Collections.emptyList();
             }
-            else if ( OrganisationUnitSelectionMode.CHILDREN.equals( orgUnitSelectionMode ) )
-            {
-                organisationUnits.add( orgUnit );
-                organisationUnits.addAll( orgUnit.getChildren() );
-            }
-            else // SELECTED
-            {
-                organisationUnits.add( orgUnit );
-            }
+
+            return getAccessibleOrgUnits( params, user );
+        }
+
+        List<OrganisationUnit> organisationUnits;
+
+        switch ( orgUnitSelectionMode )
+        {
+        case ALL:
+            organisationUnits = getAllOrgUnits( params, user );
+            break;
+        case CHILDREN:
+            organisationUnits = getChildrenOrgUnits( params );
+            break;
+        case DESCENDANTS:
+            organisationUnits = getDescendantOrgUnits( params );
+            break;
+        case CAPTURE:
+            organisationUnits = getCaptureOrgUnits( params, user );
+            break;
+        case SELECTED:
+            organisationUnits = getSelectedOrgUnits( params );
+            break;
+        default:
+            organisationUnits = getAccessibleOrgUnits( params, user );
+            break;
         }
 
         return organisationUnits;
+    }
+
+    private List<OrganisationUnit> getAllOrgUnits( EventSearchParams params, User user )
+    {
+        if ( params.getOrgUnit() != null )
+        {
+            return Collections.emptyList();
+        }
+
+        if ( !userCanSearchOuModeALL( user ) )
+        {
+            throw new IllegalQueryException( "User is not authorized to use ALL organisation units. " );
+        }
+
+        return Collections.emptyList();
+    }
+
+    private List<OrganisationUnit> getChildrenOrgUnits( EventSearchParams params )
+    {
+        if ( params.getOrgUnit() == null )
+        {
+            throw new IllegalQueryException( "Organisation unit is required to use CHILDREN scope." );
+        }
+
+        return Arrays.asList( params.getOrgUnit() );
+    }
+
+    private List<OrganisationUnit> getSelectedOrgUnits( EventSearchParams params )
+    {
+        if ( params.getOrgUnit() == null )
+        {
+            throw new IllegalQueryException( "Organisation unit is required to use SELECTED scope. " );
+        }
+
+        return Collections.emptyList();
+    }
+
+    private List<OrganisationUnit> getDescendantOrgUnits( EventSearchParams params )
+    {
+        if ( params.getOrgUnit() == null )
+        {
+            throw new IllegalQueryException( "Organisation unit is required to use DESCENDANTS scope. " );
+        }
+
+        return Arrays.asList( params.getOrgUnit() );
+    }
+
+    private List<OrganisationUnit> getCaptureOrgUnits( EventSearchParams params, User user )
+    {
+        if ( params.getOrgUnit() != null )
+        {
+            return Collections.emptyList();
+        }
+
+        if ( user == null )
+        {
+            throw new IllegalQueryException( "User is required to use CAPTURE scope." );
+        }
+
+        return user.getOrganisationUnits().stream().collect( Collectors.toList() );
+    }
+
+    private List<OrganisationUnit> getAccessibleOrgUnits( EventSearchParams params, User user )
+    {
+        if ( params.getOrgUnit() != null )
+        {
+            return Collections.emptyList();
+        }
+
+        if ( user == null )
+        {
+            throw new IllegalQueryException( "User is required to use ACCESSIBLE scope." );
+        }
+
+        if ( params.getProgram() == null || params.getProgram().isClosed() || params.getProgram().isProtected() )
+        {
+            return user.getOrganisationUnits().stream().collect( Collectors.toList() );
+        }
+
+        return user.getTeiSearchOrganisationUnitsWithFallback().stream().collect( Collectors.toList() );
     }
 
     private void saveTrackedEntityComment( ProgramStageInstance programStageInstance, Event event, User user,
@@ -921,42 +979,49 @@ public abstract class AbstractEventService implements EventService
     private OrganisationUnit getOrganisationUnit( IdSchemes idSchemes, String id )
     {
         return organisationUnitCache.get( id,
-            () -> HibernateProxyUtils
-                .unproxy( manager.getObject( OrganisationUnit.class, idSchemes.getOrgUnitIdScheme(), id ) ) );
+            () -> manager.getObject( OrganisationUnit.class, idSchemes.getOrgUnitIdScheme(), id ) );
     }
 
-    private DataElement getDataElement( IdScheme idScheme, String id )
+    /**
+     * Get DataElement by given uid
+     *
+     * @return FALSE if currentUser doesn't have READ access to given
+     *         DataElement OR no DataElement with given uid exist TRUE if
+     *         DataElement exist and currentUser has READ access
+     */
+    private boolean getDataElement( String userUid, String dataElementUid )
     {
-        return dataElementCache
-            .get( id, s -> HibernateProxyUtils.unproxy( manager.getObject( DataElement.class, idScheme, id ) ) )
-            .orElse( null );
+        String key = userUid + "-" + dataElementUid;
+        return dataElementCache.get( key, k -> manager.get( DataElement.class, dataElementUid ) != null )
+            .orElse( false );
     }
 
     @Override
-    public void validate( EventSearchParams params )
+    public void validate( EventSearchParams params, User user )
         throws IllegalQueryException
     {
         String violation = null;
-
-        if ( params == null )
-        {
-            throw new IllegalQueryException( "Query parameters can not be empty" );
-        }
-
-        if ( params.getProgram() == null && params.getOrgUnit() == null && params.getTrackedEntityInstance() == null
-            && params.getEvents().isEmpty() )
-        {
-            violation = "At least one of the following query parameters are required: orgUnit, program, trackedEntityInstance or event";
-        }
 
         if ( params.hasLastUpdatedDuration() && (params.hasLastUpdatedStartDate() || params.hasLastUpdatedEndDate()) )
         {
             violation = "Last updated from and/or to and last updated duration cannot be specified simultaneously";
         }
 
-        if ( params.hasLastUpdatedDuration() && DateUtils.getDuration( params.getLastUpdatedDuration() ) == null )
+        if ( violation == null && params.hasLastUpdatedDuration()
+            && DateUtils.getDuration( params.getLastUpdatedDuration() ) == null )
         {
             violation = "Duration is not valid: " + params.getLastUpdatedDuration();
+        }
+
+        if ( violation == null && params.getOrgUnit() != null
+            && !trackerAccessManager.canAccess( user, params.getProgram(), params.getOrgUnit() ) )
+        {
+            violation = "User does not have access to orgUnit: " + params.getOrgUnit().getUid();
+        }
+
+        if ( violation == null && params.getOrgUnitSelectionMode() != null )
+        {
+            violation = getOuModeViolation( params, user );
         }
 
         if ( violation != null )
@@ -965,6 +1030,37 @@ public abstract class AbstractEventService implements EventService
 
             throw new IllegalQueryException( violation );
         }
+    }
+
+    private String getOuModeViolation( EventSearchParams params, User user )
+    {
+        OrganisationUnitSelectionMode selectedOuMode = params.getOrgUnitSelectionMode();
+
+        String violation = null;
+
+        switch ( selectedOuMode )
+        {
+        case ALL:
+            violation = userCanSearchOuModeALL( user ) ? null
+                : "Current user is not authorized to query across all organisation units";
+            break;
+        case ACCESSIBLE:
+        case CAPTURE:
+            violation = user == null ? "User is required for ouMode: " + params.getOrgUnitSelectionMode() : null;
+            break;
+        case CHILDREN:
+        case SELECTED:
+        case DESCENDANTS:
+            violation = params.getOrgUnit() == null
+                ? "Organisation unit is required for ouMode: " + params.getOrgUnitSelectionMode()
+                : null;
+            break;
+        default:
+            violation = "Invalid ouMode:  " + params.getOrgUnitSelectionMode();
+            break;
+        }
+
+        return violation;
     }
 
     /**
@@ -1056,5 +1152,16 @@ public abstract class AbstractEventService implements EventService
         }
 
         importOptions.setUser( userService.getUser( importOptions.getUser().getId() ) );
+    }
+
+    private boolean userCanSearchOuModeALL( User user )
+    {
+        if ( user == null )
+        {
+            return false;
+        }
+
+        return user.isSuper()
+            || user.isAuthorized( Authorities.F_TRACKED_ENTITY_INSTANCE_SEARCH_IN_ALL_ORGUNITS.name() );
     }
 }

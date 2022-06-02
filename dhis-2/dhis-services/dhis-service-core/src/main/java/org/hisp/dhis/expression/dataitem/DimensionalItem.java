@@ -27,14 +27,18 @@
  */
 package org.hisp.dhis.expression.dataitem;
 
+import static org.hisp.dhis.expression.ParseType.INDICATOR_EXPRESSION;
 import static org.hisp.dhis.parser.expression.ParserUtils.DOUBLE_VALUE_IF_NULL;
 import static org.hisp.dhis.parser.expression.antlr.ExpressionParser.ExprContext;
 
 import org.hisp.dhis.antlr.ParserExceptionWithoutContext;
 import org.hisp.dhis.common.DimensionalItemId;
 import org.hisp.dhis.common.DimensionalItemObject;
+import org.hisp.dhis.common.ValueType;
+import org.hisp.dhis.common.ValueTypedDimensionalItemObject;
 import org.hisp.dhis.parser.expression.CommonExpressionVisitor;
 import org.hisp.dhis.parser.expression.ExpressionItem;
+import org.hisp.dhis.system.util.ValidationUtils;
 
 /**
  * Parsed dimensional item as handled by the expression service.
@@ -59,7 +63,7 @@ public abstract class DimensionalItem
 
         visitor.getItemDescriptions().put( ctx.getText(), item.getDisplayName() );
 
-        return DOUBLE_VALUE_IF_NULL;
+        return ValidationUtils.getNullReplacementValue( getItemValueType( item, visitor ) );
     }
 
     @Override
@@ -79,28 +83,39 @@ public abstract class DimensionalItem
     @Override
     public final Object evaluate( ExprContext ctx, CommonExpressionVisitor visitor )
     {
-        Double value = visitor.getItemValueMap().get( getId( ctx, visitor ) );
+        DimensionalItemId itemId = getDimensionalItemId( ctx, visitor );
 
-        return visitor.handleNulls( value );
+        DimensionalItemObject item = visitor.getDimItemMap().get( itemId );
+
+        Object value = (item != null)
+            ? visitor.getItemValueMap().get( item )
+            : null;
+
+        return visitor.handleNulls( value, getItemValueType( item, visitor ) );
     }
 
     /**
      * Constructs the DimensionalItemId object for this item.
      *
      * @param ctx the parser item context
-     * @param visitor
+     * @param visitor the tree visitor
      * @return the DimensionalItemId object for this item
      */
     public abstract DimensionalItemId getDimensionalItemId( ExprContext ctx,
         CommonExpressionVisitor visitor );
 
+    // -------------------------------------------------------------------------
+    // Supportive methods
+    // -------------------------------------------------------------------------
+
     /**
-     * Returns the id for this item.
-     * <p/>
-     * For example, uid, or uid0.uid1, etc.
-     *
-     * @param ctx the parser item context
-     * @return the id for this item
+     * Returns the value type of this item.
      */
-    public abstract String getId( ExprContext ctx, CommonExpressionVisitor visitor );
+    private ValueType getItemValueType( DimensionalItemObject item, CommonExpressionVisitor visitor )
+    {
+        return (item instanceof ValueTypedDimensionalItemObject
+            && visitor.getParseType() != INDICATOR_EXPRESSION)
+                ? ((ValueTypedDimensionalItemObject) item).getValueType()
+                : ValueType.NUMBER;
+    }
 }

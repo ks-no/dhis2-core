@@ -153,6 +153,8 @@ public class EventSearchParams
 
     private boolean skipPaging;
 
+    private boolean includeRelationships;
+
     private List<OrderParam> orders;
 
     private List<OrderParam> gridOrders;
@@ -745,5 +747,27 @@ public class EventSearchParams
     public boolean isIncludeOnlyAssignedEvents()
     {
         return AssignedUserSelectionMode.ANY.equals( this.assignedUserSelectionMode );
+    }
+
+    public boolean isIncludeRelationships()
+    {
+        return includeRelationships;
+    }
+
+    public EventSearchParams setIncludeRelationships( boolean includeRelationships )
+    {
+        this.includeRelationships = includeRelationships;
+        return this;
+    }
+
+    public boolean isOrganisationUnitMode( OrganisationUnitSelectionMode mode )
+    {
+        return orgUnitSelectionMode != null && orgUnitSelectionMode.equals( mode );
+    }
+
+    public boolean isPathOrganisationUnitMode()
+    {
+        return orgUnitSelectionMode != null && (orgUnitSelectionMode.equals( OrganisationUnitSelectionMode.DESCENDANTS )
+            || orgUnitSelectionMode.equals( OrganisationUnitSelectionMode.CHILDREN ));
     }
 }

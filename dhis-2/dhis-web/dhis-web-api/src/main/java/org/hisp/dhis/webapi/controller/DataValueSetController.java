@@ -28,10 +28,24 @@
 package org.hisp.dhis.webapi.controller;
 
 import static org.hisp.dhis.dxf2.webmessage.WebMessageUtils.jobConfigurationReport;
+import static org.hisp.dhis.render.RenderFormat.CSV;
+import static org.hisp.dhis.render.RenderFormat.XML;
 import static org.hisp.dhis.scheduling.JobType.DATAVALUE_IMPORT;
-import static org.hisp.dhis.webapi.utils.ContextUtils.*;
+import static org.hisp.dhis.webapi.utils.ContextUtils.CONTENT_TYPE_CSV;
+import static org.hisp.dhis.webapi.utils.ContextUtils.CONTENT_TYPE_JSON;
+import static org.hisp.dhis.webapi.utils.ContextUtils.CONTENT_TYPE_PDF;
+import static org.hisp.dhis.webapi.utils.ContextUtils.CONTENT_TYPE_XML;
+import static org.hisp.dhis.webapi.utils.ContextUtils.CONTENT_TYPE_XML_ADX;
+import static org.hisp.dhis.webapi.utils.ContextUtils.setNoStore;
 
-import java.io.*;
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PrintWriter;
 import java.util.Date;
 import java.util.Set;
 import java.util.zip.GZIPOutputStream;
@@ -60,6 +74,7 @@ import org.hisp.dhis.render.RenderService;
 import org.hisp.dhis.scheduling.JobConfiguration;
 import org.hisp.dhis.scheduling.SchedulingManager;
 import org.hisp.dhis.user.CurrentUserService;
+import org.hisp.dhis.util.DateUtils;
 import org.hisp.dhis.webapi.mvc.annotation.ApiVersion;
 import org.hisp.dhis.webapi.service.WebMessageService;
 import org.hisp.dhis.webapi.utils.ContextUtils;
@@ -67,6 +82,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -107,6 +123,58 @@ public class DataValueSetController
     // Get
     // -------------------------------------------------------------------------
 
+    @GetMapping( params = { "format", "compression", "attachment" } )
+    public void getDataValueSet(
+        @RequestParam( required = false ) Set<String> dataSet,
+        @RequestParam( required = false ) Set<String> dataElementGroup,
+        @RequestParam( required = false ) Set<String> period,
+        @RequestParam( required = false ) Date startDate,
+        @RequestParam( required = false ) Date endDate,
+        @RequestParam( required = false ) Set<String> orgUnit,
+        @RequestParam( required = false ) boolean children,
+        @RequestParam( required = false ) Set<String> orgUnitGroup,
+        @RequestParam( required = false ) Set<String> attributeOptionCombo,
+        @RequestParam( required = false ) boolean includeDeleted,
+        @RequestParam( required = false ) Date lastUpdated,
+        @RequestParam( required = false ) String lastUpdatedDuration,
+        @RequestParam( required = false ) Integer limit,
+        @RequestParam( required = false ) String attachment,
+        @RequestParam( required = false ) String compression,
+        @RequestParam( required = false ) String format,
+        IdSchemes idSchemes, HttpServletResponse response )
+        throws IOException
+    {
+        setNoStore( response );
+
+        DataExportParams params = dataValueSetService.getFromUrl( dataSet, dataElementGroup,
+            period, startDate, endDate, orgUnit, children, orgUnitGroup, attributeOptionCombo,
+            includeDeleted, lastUpdated, lastUpdatedDuration, limit, idSchemes );
+
+        if ( XML.isEqual( format ) )
+        {
+            response.setContentType( CONTENT_TYPE_XML );
+            OutputStream outputStream = compress( params, response, attachment, Compression.fromValue( compression ),
+                "xml" );
+            dataValueSetService.writeDataValueSetXml( params, outputStream );
+        }
+        else if ( CSV.isEqual( format ) )
+        {
+            response.setContentType( CONTENT_TYPE_CSV );
+            OutputStream outputStream = compress( params, response, attachment, Compression.fromValue( compression ),
+                "csv" );
+            PrintWriter printWriter = new PrintWriter( outputStream );
+            dataValueSetService.writeDataValueSetCsv( params, printWriter );
+        }
+        else
+        {
+            // default to json
+            response.setContentType( CONTENT_TYPE_JSON );
+            OutputStream outputStream = compress( params, response, attachment, Compression.fromValue( compression ),
+                "json" );
+            dataValueSetService.writeDataValueSetJson( params, outputStream );
+        }
+    }
+
     @RequestMapping( method = RequestMethod.GET, produces = CONTENT_TYPE_XML )
     public void getDataValueSetXml(
         @RequestParam( required = false ) Set<String> dataSet,
@@ -134,7 +202,8 @@ public class DataValueSetController
             period, startDate, endDate, orgUnit, children, orgUnitGroup, attributeOptionCombo,
             includeDeleted, lastUpdated, lastUpdatedDuration, limit, idSchemes );
 
-        OutputStream outputStream = compress( response, attachment, Compression.fromValue( compression ), "xml" );
+        OutputStream outputStream = compress( params, response, attachment, Compression.fromValue( compression ),
+            "xml" );
 
         dataValueSetService.writeDataValueSetXml( params, outputStream );
     }
@@ -145,10 +214,13 @@ public class DataValueSetController
         @RequestParam( required = false ) Set<String> period,
         @RequestParam( required = false ) Date startDate,
         @RequestParam( required = false ) Date endDate,
-        @RequestParam Set<String> orgUnit,
+        @RequestParam( required = false ) Set<String> orgUnit,
         @RequestParam( required = false ) boolean children,
+        @RequestParam( required = false ) Set<String> orgUnitGroup,
+        @RequestParam( required = false ) Set<String> attributeOptionCombo,
         @RequestParam( required = false ) boolean includeDeleted,
         @RequestParam( required = false ) Date lastUpdated,
+        @RequestParam( required = false ) String lastUpdatedDuration,
         @RequestParam( required = false ) Integer limit,
         @RequestParam( required = false ) String attachment,
         @RequestParam( required = false ) String compression,
@@ -159,10 +231,12 @@ public class DataValueSetController
         response.setContentType( CONTENT_TYPE_XML_ADX );
         setNoStore( response );
 
-        DataExportParams params = adxDataService.getFromUrl( dataSet, period,
-            startDate, endDate, orgUnit, children, includeDeleted, lastUpdated, limit, idSchemes );
+        DataExportParams params = adxDataService.getFromUrl( dataSet,
+            period, startDate, endDate, orgUnit, children, orgUnitGroup, attributeOptionCombo,
+            includeDeleted, lastUpdated, lastUpdatedDuration, limit, idSchemes );
 
-        OutputStream outputStream = compress( response, attachment, Compression.fromValue( compression ), "xml" );
+        OutputStream outputStream = compress( params, response, attachment, Compression.fromValue( compression ),
+            "xml" );
 
         adxDataService.writeDataValueSet( params, outputStream );
     }
@@ -194,7 +268,8 @@ public class DataValueSetController
             period, startDate, endDate, orgUnit, children, orgUnitGroup, attributeOptionCombo,
             includeDeleted, lastUpdated, lastUpdatedDuration, limit, idSchemes );
 
-        OutputStream outputStream = compress( response, attachment, Compression.fromValue( compression ), "json" );
+        OutputStream outputStream = compress( params, response, attachment, Compression.fromValue( compression ),
+            "json" );
 
         dataValueSetService.writeDataValueSetJson( params, outputStream );
     }
@@ -227,7 +302,8 @@ public class DataValueSetController
             period, startDate, endDate, orgUnit, children, orgUnitGroup, attributeOptionCombo,
             includeDeleted, lastUpdated, lastUpdatedDuration, limit, idSchemes );
 
-        OutputStream outputStream = compress( response, attachment, Compression.fromValue( compression ), "csv" );
+        OutputStream outputStream = compress( params, response, attachment, Compression.fromValue( compression ),
+            "csv" );
 
         PrintWriter printWriter = new PrintWriter( outputStream );
 
@@ -410,12 +486,13 @@ public class DataValueSetController
      * @return Compressed OutputStream if given compression is given, otherwise
      *         just return uncompressed outputStream
      */
-    private OutputStream compress( HttpServletResponse response, String attachment, Compression compression,
+    private OutputStream compress( DataExportParams params, HttpServletResponse response, String attachment,
+        Compression compression,
         String format )
         throws IOException,
         HttpMessageNotWritableException
     {
-        String fileName = StringUtils.isEmpty( attachment ) ? "datavalue" : attachment;
+        String fileName = getAttachmentFileName( attachment, params );
 
         if ( Compression.GZIP == compression )
         {
@@ -441,10 +518,43 @@ public class DataValueSetController
             // no-compression option.
             if ( !StringUtils.isEmpty( attachment ) )
             {
-                response.addHeader( ContextUtils.HEADER_CONTENT_DISPOSITION, "attachment; filename=" + attachment );
+                response.addHeader( ContextUtils.HEADER_CONTENT_DISPOSITION,
+                    "attachment; filename=" + fileName + "." + format );
                 response.addHeader( ContextUtils.HEADER_CONTENT_TRANSFER_ENCODING, "binary" );
             }
             return response.getOutputStream();
         }
+    }
+
+    /**
+     * Generate file name with format "dataValues_startDate_endDate" or
+     * <p>
+     * "{attachment}_startDate_endDate" if value of the attachment parameter is
+     * not empty.
+     * <p>
+     * Date format is "yyyy-mm-dd". This can only apply if the request has
+     * startDate and endDate. Otherwise, will return default file name
+     * "dataValues".
+     *
+     * @param attachment The attachment parameter.
+     * @param params {@link DataExportParams} contains startDate and endDate
+     *        parameter.
+     * @return the export file name.
+     */
+    private String getAttachmentFileName( String attachment, DataExportParams params )
+    {
+        String fileName = StringUtils.isEmpty( attachment ) ? "dataValues" : attachment;
+
+        if ( params.getStartDate() == null || params.getEndDate() == null )
+        {
+            return fileName;
+        }
+
+        String dates = String.join( "_", DateUtils.getSqlDateString( params.getStartDate() ),
+            DateUtils.getSqlDateString( params.getEndDate() ) );
+
+        fileName = fileName.contains( "." ) ? fileName.substring( 0, fileName.indexOf( "." ) ) : fileName;
+
+        return String.join( "_", fileName, dates );
     }
 }

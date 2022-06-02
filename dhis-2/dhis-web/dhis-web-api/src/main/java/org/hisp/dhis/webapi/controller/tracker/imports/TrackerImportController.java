@@ -41,6 +41,7 @@ import javax.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 
 import org.hisp.dhis.common.CodeGenerator;
+import org.hisp.dhis.common.DhisApiVersion;
 import org.hisp.dhis.dxf2.webmessage.WebMessage;
 import org.hisp.dhis.render.RenderService;
 import org.hisp.dhis.scheduling.JobType;
@@ -55,11 +56,13 @@ import org.hisp.dhis.user.User;
 import org.hisp.dhis.webapi.controller.exception.NotFoundException;
 import org.hisp.dhis.webapi.controller.tracker.TrackerBundleParams;
 import org.hisp.dhis.webapi.controller.tracker.TrackerImportReportRequest;
+import org.hisp.dhis.webapi.mvc.annotation.ApiVersion;
 import org.hisp.dhis.webapi.service.ContextService;
 import org.hisp.dhis.webapi.strategy.tracker.imports.TrackerImportStrategyHandler;
 import org.hisp.dhis.webapi.utils.ContextUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.HttpStatusCodeException;
 
@@ -69,6 +72,7 @@ import org.springframework.web.client.HttpStatusCodeException;
 @RestController
 @RequestMapping( value = RESOURCE_PATH )
 @RequiredArgsConstructor
+@ApiVersion( { DhisApiVersion.DEFAULT, DhisApiVersion.ALL } )
 public class TrackerImportController
 {
     static final String TRACKER_JOB_ADDED = "Tracker job added";
@@ -93,6 +97,7 @@ public class TrackerImportController
         TrackerImportReportRequest trackerImportReportRequest = TrackerImportReportRequest.builder()
             .trackerBundleParams( trackerBundleParams ).contextService( contextService ).userUid( currentUser.getUid() )
             .isAsync( true ).uid( jobId )
+            .authentication( SecurityContextHolder.getContext().getAuthentication() )
             .build();
 
         trackerImportStrategy

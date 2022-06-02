@@ -42,10 +42,7 @@ import java.time.Duration;
  */
 public interface CacheProvider
 {
-
     <V> Cache<V> createAnalyticsResponseCache( Duration initialExpirationTime );
-
-    <V> Cache<V> createAppCache();
 
     <V> Cache<V> createDefaultObjectCache();
 
@@ -102,4 +99,6 @@ public interface CacheProvider
     <V> Cache<V> createUserGroupNameCache();
 
     <V> Cache<V> createUserDisplayNameCache();
+
+    <V> Cache<V> createProgramOrgUnitAssociationCache();
 }

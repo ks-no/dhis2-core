@@ -33,7 +33,10 @@ import static org.hisp.dhis.analytics.ColumnDataType.TEXT;
 import static org.hisp.dhis.analytics.util.AnalyticsSqlUtils.quote;
 import static org.hisp.dhis.util.DateUtils.getLongDateString;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
@@ -41,7 +44,16 @@ import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 
 import org.apache.commons.lang3.StringUtils;
-import org.hisp.dhis.analytics.*;
+import org.hisp.dhis.analytics.AnalyticsIndex;
+import org.hisp.dhis.analytics.AnalyticsTable;
+import org.hisp.dhis.analytics.AnalyticsTableColumn;
+import org.hisp.dhis.analytics.AnalyticsTableHook;
+import org.hisp.dhis.analytics.AnalyticsTableHookService;
+import org.hisp.dhis.analytics.AnalyticsTableManager;
+import org.hisp.dhis.analytics.AnalyticsTablePartition;
+import org.hisp.dhis.analytics.AnalyticsTablePhase;
+import org.hisp.dhis.analytics.AnalyticsTableType;
+import org.hisp.dhis.analytics.AnalyticsTableUpdateParams;
 import org.hisp.dhis.analytics.partition.PartitionManager;
 import org.hisp.dhis.calendar.Calendar;
 import org.hisp.dhis.category.CategoryService;
@@ -62,6 +74,7 @@ import org.hisp.dhis.setting.SystemSettingManager;
 import org.hisp.dhis.system.database.DatabaseInfo;
 import org.hisp.dhis.util.DateUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Async;
@@ -86,9 +99,11 @@ public abstract class AbstractJdbcTableManager
      * <li>1999-12-12T10:10:10</li>
      * <li>1999-10-10 10:10:10</li>
      * <li>1999-10-10 10:10</li>
+     * <li>2021-12-14T11:45:00.000Z</li>
+     * <li>2021-12-14T11:45:00.000</li>
      * </ul>
      */
-    protected static final String DATE_REGEXP = "^\\d{4}-\\d{2}-\\d{2}(\\s|T)?((\\d{2}:)(\\d{2}:)?(\\d{2}))?$";
+    protected static final String DATE_REGEXP = "^\\d{4}-\\d{2}-\\d{2}(\\s|T)?((\\d{2}:)(\\d{2}:)?(\\d{2}))?(|.(\\d{3})|.(\\d{3})Z)?$";
 
     protected static final Set<ValueType> NO_INDEX_VAL_TYPES = ImmutableSet.of( ValueType.TEXT, ValueType.LONG_TEXT );
 
@@ -222,7 +237,8 @@ public abstract class AbstractJdbcTableManager
     public void swapTable( AnalyticsTableUpdateParams params, AnalyticsTable table )
     {
         boolean tableExists = partitionManager.tableExists( table.getTableName() );
-        boolean skipMasterTable = params.isPartialUpdate() && tableExists;
+        boolean skipMasterTable = params.isPartialUpdate() && tableExists
+            && table.getTableType().hasLatestPartition();
 
         log.info( String.format( "Swapping table, master table exists: %b, skip master table: %b", tableExists,
             skipMasterTable ) );
@@ -245,6 +261,12 @@ public abstract class AbstractJdbcTableManager
     public void dropTempTable( AnalyticsTable table )
     {
         dropTableCascade( table.getTempTableName() );
+    }
+
+    @Override
+    public void dropTempTablePartition( AnalyticsTablePartition tablePartition )
+    {
+        dropTableCascade( tablePartition.getTempTableName() );
     }
 
     @Override
@@ -370,9 +392,9 @@ public abstract class AbstractJdbcTableManager
         {
             jdbcTemplate.execute( sql );
         }
-        catch ( BadSqlGrammarException ex )
+        catch ( DataAccessException ex )
         {
-            log.debug( ex.getMessage() );
+            log.error( ex.getMessage() );
         }
     }
 
@@ -663,4 +685,5 @@ public abstract class AbstractJdbcTableManager
 
         executeSilently( sql );
     }
+
 }

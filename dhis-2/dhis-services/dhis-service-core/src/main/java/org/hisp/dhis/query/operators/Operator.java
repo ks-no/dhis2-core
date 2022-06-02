@@ -171,7 +171,7 @@ public abstract class Operator<T extends Comparable<? super T>>
 
     public abstract boolean test( Object value );
 
-    org.hibernate.criterion.MatchMode getMatchMode( org.hisp.dhis.query.operators.MatchMode matchMode )
+    org.hibernate.criterion.MatchMode getMatchMode( MatchMode matchMode )
     {
         switch ( matchMode )
         {
@@ -188,7 +188,7 @@ public abstract class Operator<T extends Comparable<? super T>>
         }
     }
 
-    protected JpaQueryUtils.StringSearchMode getJpaMatchMode( org.hisp.dhis.query.operators.MatchMode matchMode )
+    protected JpaQueryUtils.StringSearchMode getJpaMatchMode( MatchMode matchMode )
     {
         switch ( matchMode )
         {
@@ -200,6 +200,30 @@ public abstract class Operator<T extends Comparable<? super T>>
             return JpaQueryUtils.StringSearchMode.ENDING_LIKE;
         case ANYWHERE:
             return JpaQueryUtils.StringSearchMode.ANYWHERE;
+        default:
+            return null;
+        }
+    }
+
+    /**
+     * Get JPA String search mode for NOT LIKE match mode.
+     *
+     * @param matchMode {@link MatchMode}
+     * @return {@link JpaQueryUtils.StringSearchMode} used for generating JPA
+     *         Api Query
+     */
+    protected JpaQueryUtils.StringSearchMode getNotLikeJpaMatchMode( MatchMode matchMode )
+    {
+        switch ( matchMode )
+        {
+        case EXACT:
+            return JpaQueryUtils.StringSearchMode.NOT_EQUALS;
+        case START:
+            return JpaQueryUtils.StringSearchMode.NOT_STARTING_LIKE;
+        case END:
+            return JpaQueryUtils.StringSearchMode.NOT_ENDING_LIKE;
+        case ANYWHERE:
+            return JpaQueryUtils.StringSearchMode.NOT_ANYWHERE;
         default:
             return null;
         }

@@ -27,18 +27,38 @@
  */
 package org.hisp.dhis.maintenance;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 import org.hisp.dhis.IntegrationTestBase;
-import org.hisp.dhis.common.AuditType;
+import org.hisp.dhis.audit.Audit;
+import org.hisp.dhis.audit.AuditQuery;
+import org.hisp.dhis.audit.AuditScope;
+import org.hisp.dhis.audit.AuditService;
+import org.hisp.dhis.audit.AuditType;
 import org.hisp.dhis.common.DeliveryChannel;
 import org.hisp.dhis.dataelement.DataElement;
 import org.hisp.dhis.dataelement.DataElementService;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.organisationunit.OrganisationUnitService;
-import org.hisp.dhis.program.*;
+import org.hisp.dhis.program.Program;
+import org.hisp.dhis.program.ProgramInstance;
+import org.hisp.dhis.program.ProgramInstanceService;
+import org.hisp.dhis.program.ProgramService;
+import org.hisp.dhis.program.ProgramStage;
+import org.hisp.dhis.program.ProgramStageInstance;
+import org.hisp.dhis.program.ProgramStageInstanceService;
+import org.hisp.dhis.program.ProgramStageService;
 import org.hisp.dhis.program.message.ProgramMessage;
 import org.hisp.dhis.program.message.ProgramMessageRecipients;
 import org.hisp.dhis.program.message.ProgramMessageService;
@@ -53,6 +73,7 @@ import org.hisp.dhis.trackedentity.TrackedEntityInstanceService;
 import org.hisp.dhis.trackedentitydatavalue.TrackedEntityDataValueAudit;
 import org.hisp.dhis.trackedentitydatavalue.TrackedEntityDataValueAuditService;
 import org.joda.time.DateTime;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -100,6 +121,12 @@ public class MaintenanceServiceTest
     @Autowired
     private MaintenanceService maintenanceService;
 
+    @Autowired
+    private TrackedEntityInstanceService trackedEntityInstanceService;
+
+    @Autowired
+    private AuditService auditService;
+
     private Date incidenDate;
 
     private Date enrollmentDate;
@@ -114,11 +141,17 @@ public class MaintenanceServiceTest
 
     private ProgramInstance programInstance;
 
+    private ProgramInstance programInstanceWithTeiAssociation;
+
     private ProgramStageInstance programStageInstance;
+
+    private ProgramStageInstance programStageInstanceWithTeiAssociation;
 
     private TrackedEntityInstance entityInstance;
 
     private TrackedEntityInstance entityInstanceB;
+
+    private TrackedEntityInstance entityInstanceWithAssociations;
 
     private Collection<Long> orgunitIds;
 
@@ -154,6 +187,8 @@ public class MaintenanceServiceTest
 
         entityInstanceB = createTrackedEntityInstance( organisationUnit );
 
+        entityInstanceWithAssociations = createTrackedEntityInstance( 'T', organisationUnit );
+
         DateTime testDate1 = DateTime.now();
         testDate1.withTimeAtStartOfDay();
         testDate1 = testDate1.minusDays( 70 );
@@ -167,6 +202,13 @@ public class MaintenanceServiceTest
         programInstance.setUid( "UID-A" );
         programInstance.setOrganisationUnit( organisationUnit );
 
+        programInstanceWithTeiAssociation = new ProgramInstance( enrollmentDate, incidenDate,
+            entityInstanceWithAssociations, program );
+        programInstanceWithTeiAssociation.setUid( "UID-B" );
+        programInstanceWithTeiAssociation.setOrganisationUnit( organisationUnit );
+        trackedEntityInstanceService.addTrackedEntityInstance( entityInstanceWithAssociations );
+
+        programInstanceService.addProgramInstance( programInstanceWithTeiAssociation );
         programInstanceService.addProgramInstance( programInstance );
 
         programStageInstance = new ProgramStageInstance( programInstance, stageA );
@@ -174,6 +216,14 @@ public class MaintenanceServiceTest
         programStageInstance.setOrganisationUnit( organisationUnit );
         programStageInstance.setProgramInstance( programInstance );
         programStageInstance.setExecutionDate( new Date() );
+
+        programStageInstanceWithTeiAssociation = new ProgramStageInstance( programInstanceWithTeiAssociation, stageA );
+        programStageInstanceWithTeiAssociation.setUid( "PSUID-C" );
+        programStageInstanceWithTeiAssociation.setOrganisationUnit( organisationUnit );
+        programStageInstanceWithTeiAssociation.setProgramInstance( programInstanceWithTeiAssociation );
+        programStageInstanceWithTeiAssociation.setExecutionDate( new Date() );
+
+        programStageInstanceService.addProgramStageInstance( programStageInstanceWithTeiAssociation );
 
     }
 
@@ -284,7 +334,7 @@ public class MaintenanceServiceTest
         programStageInstanceService.addProgramStageInstance( programStageInstanceA );
 
         TrackedEntityDataValueAudit trackedEntityDataValueAudit = new TrackedEntityDataValueAudit( dataElement,
-            programStageInstanceA, "value", "modifiedBy", false, AuditType.UPDATE );
+            programStageInstanceA, "value", "modifiedBy", false, org.hisp.dhis.common.AuditType.UPDATE );
 
         trackedEntityDataValueAuditService.addTrackedEntityDataValueAudit( trackedEntityDataValueAudit );
 
@@ -345,11 +395,7 @@ public class MaintenanceServiceTest
 
         assertNull( programStageInstanceService.getProgramStageInstance( idA ) );
 
-        Relationship relationship = relationshipService.getRelationship( r.getId() );
-
-        assertNotNull( relationship );
-        assertNull( relationship.getFrom() );
-        assertNull( relationship.getTo() );
+        assertNull( relationshipService.getRelationship( r.getId() ) );
 
         assertTrue(
             programStageInstanceService.programStageInstanceExistsIncludingDeleted( programStageInstanceA.getUid() ) );
@@ -394,11 +440,7 @@ public class MaintenanceServiceTest
 
         assertNull( programInstanceService.getProgramInstance( programInstance.getId() ) );
 
-        Relationship relationship = relationshipService.getRelationship( r.getId() );
-
-        assertNotNull( relationship );
-        assertNull( relationship.getFrom() );
-        assertNull( relationship.getTo() );
+        assertNull( relationshipService.getRelationship( r.getId() ) );
 
         assertTrue( programInstanceService.programInstanceExistsIncludingDeleted( programInstance.getUid() ) );
 
@@ -408,50 +450,28 @@ public class MaintenanceServiceTest
     }
 
     @Test
-    public void testDeleteInvalidRelationships()
+    @Ignore // ignored until we can inject dhis.conf property overrides
+    public void testAuditEntryForDeletionOfSoftDeletedTrackedEntityInstance()
     {
+        trackedEntityInstanceService.deleteTrackedEntityInstance( entityInstanceWithAssociations );
 
-        Relationship relationship = createRelationship();
+        assertNull( trackedEntityInstanceService.getTrackedEntityInstance( entityInstanceWithAssociations.getId() ) );
+        assertTrue( trackedEntityInstanceService
+            .trackedEntityInstanceExistsIncludingDeleted( entityInstanceWithAssociations.getUid() ) );
 
-        assertTrue( relationshipService.relationshipExists( relationship.getUid() ) );
+        maintenanceService.deleteSoftDeletedTrackedEntityInstances();
 
-        maintenanceService.deleteInvalidRelationships();
+        List<Audit> audits = auditService
+            .getAudits( AuditQuery.builder().auditType( Sets.newHashSet( AuditType.DELETE ) )
+                .auditScope( Sets.newHashSet( AuditScope.TRACKER ) ).build() );
 
-        assertTrue( relationshipService.relationshipExists( relationship.getUid() ) );
-
-        relationshipService.invalidateRelationship( relationship );
-
-        assertTrue( relationshipService.relationshipExists( relationship.getUid() ) );
-
-        maintenanceService.deleteInvalidRelationships();
-
-        assertFalse( relationshipService.relationshipExists( relationship.getUid() ) );
-    }
-
-    private Relationship createRelationship()
-    {
-        RelationshipType rType = createRelationshipType( 'A' );
-        rType.getFromConstraint().setRelationshipEntity( RelationshipEntity.PROGRAM_INSTANCE );
-        rType.getFromConstraint().setProgram( program );
-
-        rType.getToConstraint().setRelationshipEntity( RelationshipEntity.TRACKED_ENTITY_INSTANCE );
-        rType.getFromConstraint().setTrackedEntityType( entityInstance.getTrackedEntityType() );
-
-        relationshipTypeService.addRelationshipType( rType );
-
-        Relationship r = new Relationship();
-        RelationshipItem rItem1 = new RelationshipItem();
-        rItem1.setProgramInstance( programInstance );
-
-        RelationshipItem rItem2 = new RelationshipItem();
-        rItem2.setTrackedEntityInstance( entityInstance );
-
-        r.setFrom( rItem1 );
-        r.setTo( rItem2 );
-        r.setRelationshipType( rType );
-
-        relationshipService.addRelationship( r );
-
-        return r;
+        assertFalse( audits.isEmpty() );
+        assertEquals( 1,
+            audits.stream().filter( a -> a.getKlass().equals( "org.hisp.dhis.program.ProgramInstance" ) ).count() );
+        assertEquals( 1, audits.stream()
+            .filter( a -> a.getKlass().equals( "org.hisp.dhis.program.ProgramStageInstance" ) ).count() );
+        assertEquals( 1, audits.stream()
+            .filter( a -> a.getKlass().equals( "org.hisp.dhis.trackedentity.TrackedEntityInstance" ) ).count() );
+        audits.forEach( a -> assertSame( a.getAuditType(), AuditType.DELETE ) );
     }
 }

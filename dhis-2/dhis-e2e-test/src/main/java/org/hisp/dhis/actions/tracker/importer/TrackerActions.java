@@ -125,6 +125,21 @@ public class TrackerActions
         return new TrackerApiResponse( response );
     }
 
+    public TrackerApiResponse getTrackedEntity( String entityId )
+    {
+        return new TrackerApiResponse( this.get( "/trackedEntities/" + entityId ) );
+    }
+
+    public TrackerApiResponse getEnrollment( String enrollmentId )
+    {
+        return new TrackerApiResponse( this.get( "/enrollments/" + enrollmentId ) );
+    }
+
+    public TrackerApiResponse getEvent( String eventId )
+    {
+        return new TrackerApiResponse( this.get( "/events/" + eventId ) );
+    }
+
     private void saveCreatedData( ApiResponse response )
     {
         String[] val = {
@@ -265,22 +280,40 @@ public class TrackerActions
 
     public JsonObject buildNonBidirectionalTrackedEntityRelationship(String trackedEntity_1, String trackedEntity_2 )
     {
-        return buildTrackedEntityRelationship( trackedEntity_1, trackedEntity_2, "TV9oB9LT3sh" /* a non bidirectional relationship type*/ );
+        return buildTrackedEntityRelationship( trackedEntity_1, trackedEntity_2, "TV9oB9LT3sh" /*
+         * a
+         * non
+         * bidirectional
+         * relationship
+         * type
+         */ );
     }
 
     public JsonObject buildBidirectionalTrackedEntityRelationship(String trackedEntity_1, String trackedEntity_2 )
     {
-        return buildTrackedEntityRelationship( trackedEntity_1, trackedEntity_2, "xLmPUYJX8Ks"  /* a bidirectional relationship type*/  );
+        return buildTrackedEntityRelationship( trackedEntity_1, trackedEntity_2, "xLmPUYJX8Ks" /*
+         * a
+         * bidirectional
+         * relationship
+         * type
+         */ );
     }
 
-    public JsonObject buildTrackedEntityRelationship(String trackedEntity_1, String trackedEntity_2, String relationshipType )
+    public JsonObject buildTrackedEntityRelationship( String trackedEntity_1, String trackedEntity_2,
+        String relationshipType )
+    {
+        return buildRelationship( "trackedEntity", trackedEntity_1, "trackedEntity", trackedEntity_2, relationshipType );
+    }
+
+    public JsonObject buildRelationship( String fromEntityName, String fromEntityId, String toEntityName, String toEntityId,
+        String relationshipType )
     {
         return new JsonObjectBuilder()
                 .addProperty( "relationshipType", relationshipType )
                 .addObject( "from", new JsonObjectBuilder()
-                        .addProperty( "trackedEntity", trackedEntity_1 ) )
+                        .addProperty( "trackedEntity", fromEntityId ) )
                 .addObject( "to", new JsonObjectBuilder()
-                        .addProperty( "trackedEntity", trackedEntity_2 ) )
+                        .addProperty( "trackedEntity", toEntityId ) )
                 .build();
     }
 
@@ -291,4 +324,5 @@ public class TrackerActions
             .addProperty( "orgUnit", ou )
             .wrapIntoArray( "trackedEntities" );
     }
+
 }

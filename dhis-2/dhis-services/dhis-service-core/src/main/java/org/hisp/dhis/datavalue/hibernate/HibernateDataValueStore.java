@@ -32,7 +32,11 @@ import static org.hisp.dhis.common.OrganisationUnitSelectionMode.DESCENDANTS;
 import static org.hisp.dhis.commons.util.TextUtils.getCommaDelimitedString;
 import static org.hisp.dhis.commons.util.TextUtils.removeLastOr;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.BlockingQueue;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -194,7 +198,7 @@ public class HibernateDataValueStore extends HibernateGenericStore<DataValue>
         }
         else if ( params.hasStartEndDate() )
         {
-            hql += "and (pe.startDate >= :startDate and pe.endDate < :endDate) ";
+            hql += "and (pe.startDate >= :startDate and pe.endDate <= :endDate) ";
         }
 
         if ( params.isIncludeChildrenForOrganisationUnits() )
@@ -220,7 +224,7 @@ public class HibernateDataValueStore extends HibernateGenericStore<DataValue>
             hql += "and ao.id in (:attributeOptionCombos) ";
         }
 
-        if ( params.hasLastUpdated() )
+        if ( params.hasLastUpdated() || params.hasLastUpdatedDuration() )
         {
             hql += "and dv.lastUpdated >= :lastUpdated ";
         }
@@ -228,6 +232,19 @@ public class HibernateDataValueStore extends HibernateGenericStore<DataValue>
         if ( !params.isIncludeDeleted() )
         {
             hql += "and dv.deleted is false ";
+        }
+
+        if ( params.isOrderByOrgUnitPath() )
+        {
+            hql += "order by ou.path ";
+        }
+
+        if ( params.isOrderByPeriod() )
+        {
+            hql += params.isOrderByOrgUnitPath()
+                ? ","
+                : "order by";
+            hql += " pe.startDate, pe.endDate ";
         }
 
         // ---------------------------------------------------------------------
@@ -264,6 +281,10 @@ public class HibernateDataValueStore extends HibernateGenericStore<DataValue>
         {
             query.setParameter( "lastUpdated", params.getLastUpdated() );
         }
+        else if ( params.hasLastUpdatedDuration() )
+        {
+            query.setParameter( "lastUpdated", DateUtils.nowMinusDuration( params.getLastUpdatedDuration() ) );
+        }
 
         if ( params.hasLimit() )
         {
@@ -282,46 +303,6 @@ public class HibernateDataValueStore extends HibernateGenericStore<DataValue>
 
         return getList( builder, newJpaParameters()
             .addPredicate( root -> builder.equal( root.get( "deleted" ), false ) ) );
-    }
-
-    @Override
-    public List<DataValue> getDataValues( OrganisationUnit source, Period period,
-        Collection<DataElement> dataElements, CategoryOptionCombo attributeOptionCombo )
-    {
-        Period storedPeriod = periodStore.reloadPeriod( period );
-
-        if ( storedPeriod == null || dataElements == null || dataElements.isEmpty() )
-        {
-            return new ArrayList<>();
-        }
-
-        String hql = "select dv from DataValue dv  where dv.dataElement in (:dataElements) and dv.period =:period and dv.deleted = false ";
-
-        if ( source != null )
-        {
-            hql += " and dv.source =:source ";
-        }
-
-        if ( attributeOptionCombo != null )
-        {
-            hql += " and dv.attributeOptionCombo =:attributeOptionCombo ";
-        }
-
-        Query<DataValue> query = getQuery( hql )
-            .setParameter( "dataElements", dataElements )
-            .setParameter( "period", storedPeriod );
-
-        if ( source != null )
-        {
-            query.setParameter( "source", source );
-        }
-
-        if ( attributeOptionCombo != null )
-        {
-            query.setParameter( "attributeOptionCombo", attributeOptionCombo );
-        }
-
-        return getList( query );
     }
 
     @Override
@@ -503,14 +484,22 @@ public class HibernateDataValueStore extends HibernateGenericStore<DataValue>
 
             ddv.setSourcePath( sourcePath );
 
-            if ( params.hasCallback() )
+            if ( params.hasBlockingQueue() )
             {
-                params.getCallback().consume( ddv );
+                if ( !addToBlockingQueue( params.getBlockingQueue(), ddv ) )
+                {
+                    return result; // Abort
+                }
             }
             else
             {
                 result.add( ddv );
             }
+        }
+
+        if ( params.hasBlockingQueue() )
+        {
+            addToBlockingQueue( params.getBlockingQueue(), END_OF_DDV_DATA );
         }
 
         log.debug( result.size() + " DeflatedDataValues returned from: " + sql );
@@ -590,5 +579,26 @@ public class HibernateDataValueStore extends HibernateGenericStore<DataValue>
         }
 
         return deos;
+    }
+
+    /**
+     * Adds a {@see DeflatedDataValue} to a blocking queue
+     *
+     * @param blockingQueue the queue to add to
+     * @param ddv the deflated data value
+     * @return true if it was added, false if timeout
+     */
+    private boolean addToBlockingQueue( BlockingQueue<DeflatedDataValue> blockingQueue, DeflatedDataValue ddv )
+    {
+        try
+        {
+            return blockingQueue.offer( ddv, DDV_QUEUE_TIMEOUT_VALUE, DDV_QUEUE_TIMEOUT_UNIT );
+        }
+        catch ( InterruptedException e )
+        {
+            Thread.currentThread().interrupt();
+
+            return false;
+        }
     }
 }

@@ -39,6 +39,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
 
 /**
@@ -63,9 +65,22 @@ public class DefaultEnrollmentStore extends AbstractStore implements EnrollmentS
 
     public Multimap<String, Enrollment> getEnrollmentsByTrackedEntityInstanceIds( List<Long> ids, AggregateContext ctx )
     {
+        List<List<Long>> teiIds = Lists.partition( ids, PARITITION_SIZE );
+
+        Multimap<String, Enrollment> enrollmentMultimap = ArrayListMultimap.create();
+
+        teiIds.forEach( partition -> enrollmentMultimap
+            .putAll( getEnrollmentsByTrackedEntityInstanceIdsPartitioned( partition, ctx ) ) );
+
+        return enrollmentMultimap;
+    }
+
+    private Multimap<String, Enrollment> getEnrollmentsByTrackedEntityInstanceIdsPartitioned( List<Long> ids,
+        AggregateContext ctx )
+    {
         EnrollmentRowCallbackHandler handler = new EnrollmentRowCallbackHandler();
 
-        jdbcTemplate.query( withAclCheck( GET_ENROLLMENT_SQL_BY_TEI, ctx, " pi.programid IN (:programIds)" ),
+        jdbcTemplate.query( getQuery( GET_ENROLLMENT_SQL_BY_TEI, ctx, " pi.programid IN (:programIds)", "pi" ),
             createIdsParam( ids ).addValue( "programIds", ctx.getPrograms() ), handler );
 
         return handler.getItems();

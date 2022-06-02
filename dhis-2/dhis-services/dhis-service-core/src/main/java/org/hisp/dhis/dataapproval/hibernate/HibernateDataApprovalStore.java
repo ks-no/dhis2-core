@@ -68,6 +68,7 @@ import org.hisp.dhis.jdbc.StatementBuilder;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.period.Period;
 import org.hisp.dhis.period.PeriodService;
+import org.hisp.dhis.period.PeriodStore;
 import org.hisp.dhis.security.acl.AclService;
 import org.hisp.dhis.setting.SettingKey;
 import org.hisp.dhis.setting.SystemSettingManager;
@@ -102,6 +103,8 @@ public class HibernateDataApprovalStore
 
     private final PeriodService periodService;
 
+    private final PeriodStore periodStore;
+
     private CurrentUserService currentUserService;
 
     private final CategoryService categoryService;
@@ -112,7 +115,7 @@ public class HibernateDataApprovalStore
 
     public HibernateDataApprovalStore( SessionFactory sessionFactory, JdbcTemplate jdbcTemplate,
         ApplicationEventPublisher publisher, CacheProvider cacheProvider, PeriodService periodService,
-        CurrentUserService currentUserService, CategoryService categoryService,
+        PeriodStore periodStore, CurrentUserService currentUserService, CategoryService categoryService,
         SystemSettingManager systemSettingManager,
         StatementBuilder statementBuilder )
     {
@@ -120,12 +123,14 @@ public class HibernateDataApprovalStore
 
         checkNotNull( cacheProvider );
         checkNotNull( periodService );
+        checkNotNull( periodStore );
         checkNotNull( currentUserService );
         checkNotNull( categoryService );
         checkNotNull( systemSettingManager );
         checkNotNull( statementBuilder );
 
         this.periodService = periodService;
+        this.periodStore = periodStore;
         this.currentUserService = currentUserService;
         this.categoryService = categoryService;
         this.systemSettingManager = systemSettingManager;
@@ -238,7 +243,12 @@ public class HibernateDataApprovalStore
 
     private boolean dataApprovalExistsInternal( DataApproval dataApproval )
     {
-        Period storedPeriod = periodService.reloadPeriod( dataApproval.getPeriod() );
+        Period storedPeriod = periodStore.reloadPeriod( dataApproval.getPeriod() );
+
+        if ( storedPeriod == null )
+        {
+            return false;
+        }
 
         String sql = "select dataapprovalid " +
             "from dataapproval " +
@@ -324,6 +334,9 @@ public class HibernateDataApprovalStore
         // ---------------------------------------------------------------------
         // Get other information
         // ---------------------------------------------------------------------
+
+        boolean acceptanceRequiredForApproval = (Boolean) systemSettingManager
+            .getSystemSetting( SettingKey.ACCEPTANCE_REQUIRED_FOR_APPROVAL );
 
         final boolean isSuperUser = currentUserService.currentUserIsSuper();
 
@@ -464,9 +477,6 @@ public class HibernateDataApprovalStore
 
         if ( approvalLevelBelowOrgUnit != null )
         {
-            boolean acceptanceRequiredForApproval = (Boolean) systemSettingManager
-                .getSystemSetting( SettingKey.ACCEPTANCE_REQUIRED_FOR_APPROVAL );
-
             readyBelowSubquery = "not exists ( " + // Ready if nothing expected
                                                    // below is
                                                    // unapproved(/unaccepted)
@@ -645,7 +655,8 @@ public class HibernateDataApprovalStore
                                                                                            // approved
             DataApprovalLevel actionLevel = (approvedLevel == null ? lowestApprovalLevelForOrgUnit : approvedLevel);
 
-            if ( approvedAbove && accepted && approvedAboveLevel == approvalLevelAboveUser )
+            if ( approvedAbove && accepted && acceptanceRequiredForApproval
+                && approvedAboveLevel == approvalLevelAboveUser )
             {
                 approvedAbove = false; // Hide higher-level approval from user.
             }

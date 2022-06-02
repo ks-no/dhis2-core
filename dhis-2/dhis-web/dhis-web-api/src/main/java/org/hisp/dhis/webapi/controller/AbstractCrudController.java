@@ -28,6 +28,7 @@
 package org.hisp.dhis.webapi.controller;
 
 import static java.util.Collections.singletonList;
+import static org.hisp.dhis.dxf2.webmessage.WebMessageUtils.typeReport;
 import static org.hisp.dhis.dxf2.webmessage.WebMessageUtils.validateAndThrowErrors;
 
 import java.io.IOException;
@@ -35,6 +36,7 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -65,11 +67,10 @@ import org.hisp.dhis.dxf2.metadata.MetadataImportService;
 import org.hisp.dhis.dxf2.metadata.collection.CollectionService;
 import org.hisp.dhis.dxf2.metadata.feedback.ImportReport;
 import org.hisp.dhis.dxf2.metadata.feedback.ImportReportMode;
+import org.hisp.dhis.dxf2.metadata.objectbundle.validation.TranslationsCheck;
 import org.hisp.dhis.dxf2.webmessage.WebMessage;
 import org.hisp.dhis.dxf2.webmessage.WebMessageException;
 import org.hisp.dhis.dxf2.webmessage.WebMessageUtils;
-import org.hisp.dhis.feedback.ErrorCode;
-import org.hisp.dhis.feedback.ErrorReport;
 import org.hisp.dhis.feedback.ObjectReport;
 import org.hisp.dhis.feedback.Status;
 import org.hisp.dhis.feedback.TypeReport;
@@ -229,6 +230,9 @@ public abstract class AbstractCrudController<T extends IdentifiableObject>
     @Autowired
     protected SharingService sharingService;
 
+    @Autowired
+    private TranslationsCheck translationsCheck;
+
     // --------------------------------------------------------------------------
     // GET
     // --------------------------------------------------------------------------
@@ -386,7 +390,8 @@ public abstract class AbstractCrudController<T extends IdentifiableObject>
     }
 
     @RequestMapping( value = "/{uid}/translations", method = RequestMethod.PUT )
-    public void replaceTranslations(
+    @ResponseStatus( HttpStatus.NO_CONTENT )
+    public WebMessage replaceTranslations(
         @PathVariable( "uid" ) String pvUid, @RequestParam Map<String, String> rpParameters,
         HttpServletRequest request, HttpServletResponse response )
         throws Exception
@@ -399,7 +404,7 @@ public abstract class AbstractCrudController<T extends IdentifiableObject>
             throw new WebMessageException( WebMessageUtils.notFound( getEntityClass(), pvUid ) );
         }
 
-        T persistedObject = entities.get( 0 );
+        BaseIdentifiableObject persistedObject = (BaseIdentifiableObject) entities.get( 0 );
 
         User user = currentUserService.getCurrentUser();
 
@@ -408,55 +413,22 @@ public abstract class AbstractCrudController<T extends IdentifiableObject>
             throw new UpdateAccessDeniedException( "You don't have the proper permissions to update this object." );
         }
 
-        T object = renderService.fromJson( request.getInputStream(), getEntityClass() );
+        T inputObject = renderService.fromJson( request.getInputStream(), getEntityClass() );
 
-        TypeReport typeReport = new TypeReport( Translation.class );
+        HashSet<Translation> translations = new HashSet<>( inputObject.getTranslations() );
 
-        List<Translation> objectTranslations = Lists.newArrayList( object.getTranslations() );
+        persistedObject.setTranslations( translations );
+        List<ObjectReport> objectReports = new ArrayList<>();
+        translationsCheck.run( persistedObject, getEntityClass(), getSchema(), 0,
+            objectReport -> objectReports.add( objectReport ) );
 
-        for ( int idx = 0; idx < object.getTranslations().size(); idx++ )
+        if ( objectReports.size() == 0 )
         {
-            ObjectReport objectReport = new ObjectReport( Translation.class, idx );
-            Translation translation = objectTranslations.get( idx );
-
-            if ( translation.getLocale() == null )
-            {
-                objectReport.addErrorReport(
-                    new ErrorReport( Translation.class, ErrorCode.E4000, "locale" ).setErrorKlass( getEntityClass() ) );
-            }
-
-            if ( translation.getProperty() == null )
-            {
-                objectReport.addErrorReport( new ErrorReport( Translation.class, ErrorCode.E4000, "property" )
-                    .setErrorKlass( getEntityClass() ) );
-            }
-
-            if ( translation.getValue() == null )
-            {
-                objectReport.addErrorReport(
-                    new ErrorReport( Translation.class, ErrorCode.E4000, "value" ).setErrorKlass( getEntityClass() ) );
-            }
-
-            typeReport.addObjectReport( objectReport );
-
-            if ( !objectReport.isEmpty() )
-            {
-                typeReport.getStats().incIgnored();
-            }
+            manager.update( persistedObject, user );
+            return null;
         }
 
-        if ( !typeReport.getErrorReports().isEmpty() )
-        {
-            WebMessage webMessage = WebMessageUtils.typeReport( typeReport );
-            webMessageService.send( webMessage, response, request );
-            return;
-        }
-
-        validateAndThrowErrors( () -> schemaValidator.validate( persistedObject ) );
-        manager.updateTranslations( persistedObject, object.getTranslations() );
-        manager.update( persistedObject );
-
-        response.setStatus( HttpServletResponse.SC_NO_CONTENT );
+        return WebMessageUtils.objectReport( objectReports.get( 0 ) );
     }
 
     @RequestMapping( value = "/{uid}", method = RequestMethod.PATCH )
@@ -1057,13 +1029,14 @@ public abstract class AbstractCrudController<T extends IdentifiableObject>
             renderService.fromXml( request.getInputStream(), IdentifiableObjects.class ) );
     }
 
-    private void addCollectionItems( String pvProperty, T object, IdentifiableObjects items )
+    private WebMessage addCollectionItems( String pvProperty, T object, IdentifiableObjects items )
         throws Exception
     {
         preUpdateItems( object, items );
-        collectionService.delCollectionItems( object, pvProperty, items.getDeletions() );
-        collectionService.addCollectionItems( object, pvProperty, items.getAdditions() );
+        TypeReport report = collectionService.mergeCollectionItems( object, pvProperty, items );
         postUpdateItems( object, items );
+        hibernateCacheManager.clearCache();
+        return typeReport( report );
     }
 
     @RequestMapping( value = "/{uid}/{property}", method = RequestMethod.PUT, consumes = MediaType.APPLICATION_JSON_VALUE )
@@ -1090,12 +1063,15 @@ public abstract class AbstractCrudController<T extends IdentifiableObject>
             renderService.fromXml( request.getInputStream(), IdentifiableObjects.class ) );
     }
 
-    private void replaceCollectionItems( String pvProperty, T object, IdentifiableObjects items )
+    private WebMessage replaceCollectionItems( String pvProperty, T object, IdentifiableObjects items )
         throws Exception
     {
         preUpdateItems( object, items );
-        collectionService.replaceCollectionItems( object, pvProperty, items.getIdentifiableObjects() );
+        TypeReport report = collectionService.replaceCollectionItems( object, pvProperty,
+            items.getIdentifiableObjects() );
         postUpdateItems( object, items );
+        hibernateCacheManager.clearCache();
+        return typeReport( report );
     }
 
     @RequestMapping( value = "/{uid}/{property}/{itemId}", method = RequestMethod.POST )
@@ -1120,6 +1096,7 @@ public abstract class AbstractCrudController<T extends IdentifiableObject>
         preUpdateItems( object, items );
         collectionService.addCollectionItems( object, pvProperty, items.getIdentifiableObjects() );
         postUpdateItems( object, items );
+        hibernateCacheManager.clearCache();
     }
 
     @RequestMapping( value = "/{uid}/{property}", method = RequestMethod.DELETE, consumes = MediaType.APPLICATION_JSON_VALUE )
@@ -1130,28 +1107,32 @@ public abstract class AbstractCrudController<T extends IdentifiableObject>
         HttpServletRequest request )
         throws Exception
     {
-        deleteCollectionItems( pvProperty, getEntity( pvUid ).get( 0 ),
+        TypeReport report = deleteCollectionItems( pvProperty, getEntity( pvUid ).get( 0 ),
             renderService.fromJson( request.getInputStream(), IdentifiableObjects.class ) );
     }
 
     @RequestMapping( value = "/{uid}/{property}", method = RequestMethod.DELETE, consumes = MediaType.APPLICATION_XML_VALUE )
     @ResponseStatus( HttpStatus.NO_CONTENT )
-    public void deleteCollectionItemsXml(
+    public WebMessage deleteCollectionItemsXml(
         @PathVariable( "uid" ) String pvUid,
         @PathVariable( "property" ) String pvProperty,
         HttpServletRequest request )
         throws Exception
     {
-        deleteCollectionItems( pvProperty, getEntity( pvUid ).get( 0 ),
+        TypeReport report = deleteCollectionItems( pvProperty, getEntity( pvUid ).get( 0 ),
             renderService.fromXml( request.getInputStream(), IdentifiableObjects.class ) );
+        hibernateCacheManager.clearCache();
+        return typeReport( report );
     }
 
-    private void deleteCollectionItems( String pvProperty, T object, IdentifiableObjects items )
+    private TypeReport deleteCollectionItems( String pvProperty, T object, IdentifiableObjects items )
         throws Exception
     {
         preUpdateItems( object, items );
-        collectionService.delCollectionItems( object, pvProperty, items.getIdentifiableObjects() );
+        TypeReport report = collectionService.delCollectionItems( object, pvProperty, items.getIdentifiableObjects() );
         postUpdateItems( object, items );
+        return report;
+
     }
 
     @RequestMapping( value = "/{uid}/{property}/{itemId}", method = RequestMethod.DELETE )

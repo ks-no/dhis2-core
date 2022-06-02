@@ -248,9 +248,9 @@ public class TrackedEntityInstanceQueryParams
     private int maxTeiLimit;
 
     /**
-     * Indicates whether to include soft-deleted elements
+     * Indicates whether to include soft-deleted elements. Default to false
      */
-    private boolean includeDeleted;
+    private boolean includeDeleted = false;
 
     /**
      * Indicates whether to include all TEI attributes
@@ -268,12 +268,6 @@ public class TrackedEntityInstanceQueryParams
      * Data sync job).
      */
     private boolean synchronizationQuery;
-
-    /**
-     * Indicates to use legacy fetching mechanism in case the tei result count
-     * is high
-     */
-    private boolean useLegacy;
 
     /**
      * Indicates a point in the time used to decide the data that should not be
@@ -803,7 +797,7 @@ public class TrackedEntityInstanceQueryParams
      */
     public boolean isPaging()
     {
-        return page != null || pageSize != null;
+        return !isSkipPaging();
     }
 
     /**
@@ -830,16 +824,6 @@ public class TrackedEntityInstanceQueryParams
     public int getOffset()
     {
         return (getPageWithDefault() - 1) * getPageSizeWithDefault();
-    }
-
-    /**
-     * Sets paging properties to default values.
-     */
-    public void setDefaultPaging()
-    {
-        this.page = DEFAULT_PAGE;
-        this.pageSize = DEFAULT_PAGE_SIZE;
-        this.skipPaging = false;
     }
 
     // -------------------------------------------------------------------------
@@ -1210,17 +1194,6 @@ public class TrackedEntityInstanceQueryParams
         return this;
     }
 
-    public boolean isUseLegacy()
-    {
-        return useLegacy;
-    }
-
-    public TrackedEntityInstanceQueryParams setUseLegacy( boolean useLegacy )
-    {
-        this.useLegacy = useLegacy;
-        return this;
-    }
-
     public boolean isSynchronizationQuery()
     {
         return synchronizationQuery;
@@ -1318,8 +1291,9 @@ public class TrackedEntityInstanceQueryParams
     public enum OrderColumn
     {
         TRACKEDENTITY( "trackedEntity", "tei.uid" ),
-        CREATED( CREATED_ID, "tei.created" ),
-        CREATED_AT( "createdAt", "tei.created" ),
+        // Ordering by id is the same as ordering by created date
+        CREATED( CREATED_ID, "tei.trackedentityinstanceid" ),
+        CREATED_AT( "createdAt", "tei.trackedentityinstanceid" ),
         UPDATED_AT( "updatedAt", "tei.lastUpdated" ),
         // this works only for the new endpoint
         // ORGUNIT_NAME( "orgUnitName", "tei.organisationUnit.name" ),

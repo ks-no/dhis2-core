@@ -46,6 +46,8 @@ public enum ErrorCode
     E1105( "Data set not found or not accessible: `{0}`" ),
     E1106( "There are duplicate translation record for property `{0}` and locale `{1}`" ),
     E1107( "Object type `{0}` is not translatable." ),
+    E1108( "Could not add item to collection: {0}" ),
+    E1109( "Could not remove item from collection: {0}" ),
     E1112( "Object(s) of type `{0}` not found or not accessible: `{1}`" ),
 
     /* Data */
@@ -155,6 +157,7 @@ public enum ErrorCode
 
     E4032( "A program rule variable with name `{0}` and program uid `{1}` already exists" ),
     E4033( "For program rule variable with name `{0}` following keywords are forbidden : and , or , not" ),
+    E4053( "Program stage `{0}` must reference a program." ),
 
     /* SQL views */
     E4300( "SQL query is null" ),
@@ -170,6 +173,7 @@ public enum ErrorCode
     E4310( "SQL query contains references to protected tables" ),
     E4311( "SQL query contains illegal keywords" ),
     E4312( "Current user is not authorised to read data from SQL view: `{0}`" ),
+    E4313( "SQL query contains variable names that are invalid: `{0}`" ),
 
     /* Preheat */
     E5000(

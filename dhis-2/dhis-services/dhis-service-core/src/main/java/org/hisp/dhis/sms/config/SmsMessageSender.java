@@ -30,7 +30,12 @@ package org.hisp.dhis.sms.config;
 import static org.hisp.dhis.commons.util.TextUtils.LN;
 
 import java.io.Serializable;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Future;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -40,7 +45,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.hisp.dhis.common.DeliveryChannel;
 import org.hisp.dhis.message.MessageSender;
-import org.hisp.dhis.outboundmessage.*;
+import org.hisp.dhis.outboundmessage.OutboundMessage;
+import org.hisp.dhis.outboundmessage.OutboundMessageBatch;
+import org.hisp.dhis.outboundmessage.OutboundMessageBatchStatus;
+import org.hisp.dhis.outboundmessage.OutboundMessageResponse;
+import org.hisp.dhis.outboundmessage.OutboundMessageResponseSummary;
+import org.hisp.dhis.setting.SettingKey;
+import org.hisp.dhis.setting.SystemSettingManager;
 import org.hisp.dhis.sms.outbound.GatewayResponse;
 import org.hisp.dhis.sms.outbound.OutboundSms;
 import org.hisp.dhis.sms.outbound.OutboundSmsService;
@@ -82,16 +93,19 @@ public class SmsMessageSender
     // Dependencies
     // -------------------------------------------------------------------------
 
-    private GatewayAdministrationService gatewayAdminService;
+    private final GatewayAdministrationService gatewayAdminService;
 
-    private List<SmsGateway> smsGateways;
+    private final List<SmsGateway> smsGateways;
 
-    private UserSettingService userSettingService;
+    private final UserSettingService userSettingService;
 
-    private OutboundSmsService outboundSmsService;
+    private final OutboundSmsService outboundSmsService;
+
+    private final SystemSettingManager systemSettingManager;
 
     public SmsMessageSender( GatewayAdministrationService gatewayAdminService, List<SmsGateway> smsGateways,
-        UserSettingService userSettingService, OutboundSmsService outboundSmsService )
+        UserSettingService userSettingService, OutboundSmsService outboundSmsService,
+        SystemSettingManager systemSettingManager )
     {
 
         Preconditions.checkNotNull( gatewayAdminService );
@@ -99,11 +113,14 @@ public class SmsMessageSender
         Preconditions.checkNotNull( outboundSmsService );
         Preconditions.checkNotNull( userSettingService );
         Preconditions.checkState( !smsGateways.isEmpty() );
+        Preconditions.checkNotNull( systemSettingManager );
 
         this.gatewayAdminService = gatewayAdminService;
         this.smsGateways = smsGateways;
         this.userSettingService = userSettingService;
         this.outboundSmsService = outboundSmsService;
+        this.systemSettingManager = systemSettingManager;
+
     }
 
     // -------------------------------------------------------------------------
@@ -117,7 +134,7 @@ public class SmsMessageSender
     {
         if ( !hasRecipients( users ) )
         {
-            log.info( GatewayResponse.NO_RECIPIENT.getResponseMessage() );
+            log.debug( GatewayResponse.NO_RECIPIENT.getResponseMessage() );
 
             return new OutboundMessageResponse( GatewayResponse.NO_RECIPIENT.getResponseMessage(),
                 GatewayResponse.NO_RECIPIENT, false );
@@ -129,7 +146,7 @@ public class SmsMessageSender
 
         if ( toSendList.isEmpty() )
         {
-            log.info( GatewayResponse.SMS_DISABLED.getResponseMessage() );
+            log.debug( GatewayResponse.SMS_DISABLED.getResponseMessage() );
 
             return new OutboundMessageResponse( GatewayResponse.SMS_DISABLED.getResponseMessage(),
                 GatewayResponse.SMS_DISABLED, false );
@@ -163,7 +180,7 @@ public class SmsMessageSender
     {
         if ( !hasRecipients( recipients ) )
         {
-            log.info( GatewayResponse.NO_RECIPIENT.getResponseMessage() );
+            log.debug( GatewayResponse.NO_RECIPIENT.getResponseMessage() );
 
             return new OutboundMessageResponse( GatewayResponse.NO_RECIPIENT.getResponseMessage(),
                 GatewayResponse.NO_RECIPIENT, false );
@@ -173,7 +190,7 @@ public class SmsMessageSender
 
         if ( defaultGateway == null )
         {
-            log.info( "Gateway configuration does not exist" );
+            log.debug( "Gateway configuration does not exist" );
 
             return new OutboundMessageResponse( NO_CONFIG, GatewayResponse.NO_GATEWAY_CONFIGURATION, false );
         }
@@ -254,13 +271,23 @@ public class SmsMessageSender
         {
             if ( smsGateway.accept( gatewayConfig ) )
             {
+
+                if ( text.length() > Optional.ofNullable( gatewayConfig.getMaxSmsLength() )
+                    .map( Integer::parseInt )
+                    .orElseGet(
+                        () -> (Integer) systemSettingManager.getSystemSetting( SettingKey.SMS_MAX_LENGTH ) ) )
+                {
+                    return new OutboundMessageResponse( GatewayResponse.SMS_TEXT_MESSAGE_TOO_LONG.getResponseMessage(),
+                        GatewayResponse.SMS_TEXT_MESSAGE_TOO_LONG, false );
+                }
+
                 List<String> temp = new ArrayList<>( recipients );
 
                 List<List<String>> slices = Lists.partition( temp, MAX_RECIPIENTS_ALLOWED );
 
                 for ( List<String> to : slices )
                 {
-                    log.info( "Sending SMS to " + to );
+                    log.debug( "Sending SMS to " + to );
 
                     status = smsGateway.send( subject, text, new HashSet<>( to ), gatewayConfig );
 
@@ -309,7 +336,7 @@ public class SmsMessageSender
 
         if ( okCodes.contains( gatewayResponse ) )
         {
-            log.info( "SMS sent" );
+            log.debug( "SMS sent" );
 
             status.setOk( true );
             sms.setStatus( OutboundSmsStatus.SENT );
@@ -374,7 +401,7 @@ public class SmsMessageSender
             summary.setBatchStatus( OutboundMessageBatchStatus.COMPLETED );
             summary.setResponseMessage( "SENT" );
 
-            log.info( "SMS batch processed successfully" );
+            log.debug( "SMS batch processed successfully" );
         }
 
         return summary;

@@ -27,16 +27,16 @@
  */
 package org.hisp.dhis.commons.util;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
 
 import org.hisp.dhis.commons.collection.CollectionUtils;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import com.google.common.collect.Lists;
 
-public class CollectionUtilsTest
+class CollectionUtilsTest
 {
 
     @Test

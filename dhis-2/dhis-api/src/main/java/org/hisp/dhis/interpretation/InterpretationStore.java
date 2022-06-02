@@ -40,6 +40,4 @@ public interface InterpretationStore
     long countMapInterpretations( Map map );
 
     long countVisualizationInterpretations( Visualization visualization );
-
-    Interpretation getByVisualizationId( long id );
 }

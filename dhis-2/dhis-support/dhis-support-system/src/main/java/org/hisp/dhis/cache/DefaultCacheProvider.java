@@ -84,7 +84,6 @@ public class DefaultCacheProvider
     private enum Region
     {
         analyticsResponse,
-        appCache,
         defaultObjectCache,
         isDataApproved,
         allConstantsCache,
@@ -112,7 +111,8 @@ public class DefaultCacheProvider
         programHasRulesCache,
         programRuleVariablesCache,
         userGroupNameCache,
-        userDisplayNameCache
+        userDisplayNameCache,
+        pgmOrgUnitAssocCache
     }
 
     private final Map<String, Cache<?>> allCaches = new ConcurrentHashMap<>();
@@ -138,6 +138,12 @@ public class DefaultCacheProvider
         return (long) Math.max( this.cacheFactor * size, 1 );
     }
 
+    @EventListener
+    public void handleApplicationCachesCleared( ApplicationCacheClearedEvent event )
+    {
+        allCaches.values().forEach( Cache::invalidateAll );
+    }
+
     @Override
     public <V> Cache<V> createAnalyticsResponseCache( Duration initialExpirationTime )
     {
@@ -145,13 +151,6 @@ public class DefaultCacheProvider
             .forRegion( Region.analyticsResponse.name() )
             .expireAfterWrite( initialExpirationTime.toMillis(), MILLISECONDS )
             .withMaximumSize( orZeroInTestRun( getActualSize( SIZE_10K ) ) ) );
-    }
-
-    @Override
-    public <V> Cache<V> createAppCache()
-    {
-        return registerCache( this.<V> newBuilder()
-            .forRegion( Region.appCache.name() ) );
     }
 
     /**
@@ -431,12 +430,6 @@ public class DefaultCacheProvider
             .withMaximumSize( orZeroInTestRun( getActualSize( SIZE_1K ) ) ) );
     }
 
-    @EventListener
-    public void handleApplicationCachesCleared( ApplicationCacheClearedEvent event )
-    {
-        allCaches.values().forEach( Cache::invalidateAll );
-    }
-
     @Override
     public <V> Cache<V> createUserGroupNameCache()
     {
@@ -457,5 +450,15 @@ public class DefaultCacheProvider
             .withInitialCapacity( (int) getActualSize( 20 ) )
             .forceInMemory()
             .withMaximumSize( orZeroInTestRun( SIZE_10K ) ) );
+    }
+
+    @Override
+    public <V> Cache<V> createProgramOrgUnitAssociationCache()
+    {
+        return registerCache( this.<V> newBuilder()
+            .forRegion( Region.pgmOrgUnitAssocCache.name() )
+            .expireAfterWrite( 1, TimeUnit.HOURS )
+            .withInitialCapacity( (int) getActualSize( 20 ) )
+            .withMaximumSize( orZeroInTestRun( SIZE_1K ) ) );
     }
 }

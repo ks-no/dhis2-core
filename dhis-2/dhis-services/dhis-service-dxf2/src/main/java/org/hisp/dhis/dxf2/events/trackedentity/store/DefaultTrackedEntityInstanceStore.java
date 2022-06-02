@@ -28,6 +28,7 @@
 package org.hisp.dhis.dxf2.events.trackedentity.store;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -48,6 +49,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.stereotype.Repository;
 
 import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
 
 /**
@@ -110,6 +112,18 @@ public class DefaultTrackedEntityInstanceStore extends AbstractStore implements 
     @Override
     public Map<String, TrackedEntityInstance> getTrackedEntityInstances( List<Long> ids, AggregateContext ctx )
     {
+        List<List<Long>> idPartitions = Lists.partition( ids, PARITITION_SIZE );
+
+        Map<String, TrackedEntityInstance> trackedEntityMap = new LinkedHashMap<>();
+
+        idPartitions
+            .forEach( partition -> trackedEntityMap.putAll( getTrackedEntityInstancesPartitioned( partition, ctx ) ) );
+        return trackedEntityMap;
+    }
+
+    private Map<String, TrackedEntityInstance> getTrackedEntityInstancesPartitioned( List<Long> ids,
+        AggregateContext ctx )
+    {
         TrackedEntityInstanceRowCallbackHandler handler = new TrackedEntityInstanceRowCallbackHandler();
 
         if ( !ctx.isSuperUser() && ctx.getTrackedEntityTypes().isEmpty() )
@@ -119,7 +133,7 @@ public class DefaultTrackedEntityInstanceStore extends AbstractStore implements 
             return new HashMap<>();
         }
 
-        String sql = withAclCheck( GET_TEIS_SQL, ctx, "tei.trackedentitytypeid in (:teiTypeIds)" );
+        String sql = getQuery( GET_TEIS_SQL, ctx, "tei.trackedentitytypeid in (:teiTypeIds)", "tei" );
         jdbcTemplate.query( applySortOrder( sql, StringUtils.join( ids, "," ), "trackedentityinstanceid" ),
             createIdsParam( ids ).addValue( "teiTypeIds", ctx.getTrackedEntityTypes() ), handler );
 
@@ -140,9 +154,25 @@ public class DefaultTrackedEntityInstanceStore extends AbstractStore implements 
     @Override
     public Multimap<String, String> getOwnedTeis( List<Long> ids, AggregateContext ctx )
     {
+        List<List<Long>> teiIds = Lists.partition( ids, PARITITION_SIZE );
+
+        Multimap<String, String> ownedTeisMultiMap = ArrayListMultimap.create();
+
+        teiIds.forEach( partition -> {
+            ownedTeisMultiMap.putAll( getOwnedTeisPartitioned( partition, ctx ) );
+        } );
+
+        return ownedTeisMultiMap;
+    }
+
+    private Multimap<String, String> getOwnedTeisPartitioned( List<Long> ids, AggregateContext ctx )
+    {
         OwnedTeiMapper handler = new OwnedTeiMapper();
 
         MapSqlParameterSource paramSource = createIdsParam( ids ).addValue( "userInfoId", ctx.getUserId() );
+
+        boolean checkForOwnership = ctx.getQueryParams().isIncludeAllAttributes()
+            || ctx.getParams().isIncludeEnrollments() || ctx.getParams().isIncludeEvents();
 
         String sql;
 
@@ -151,7 +181,7 @@ public class DefaultTrackedEntityInstanceStore extends AbstractStore implements 
             sql = GET_OWNERSHIP_DATA_FOR_TEIS_FOR_SPECIFIC_PROGRAM;
             paramSource.addValue( "programUid", ctx.getQueryParams().getProgram().getUid() );
         }
-        else if ( ctx.getQueryParams().isIncludeAllAttributes() )
+        else if ( checkForOwnership )
         {
             sql = GET_OWNERSHIP_DATA_FOR_TEIS_FOR_ALL_PROGRAM;
         }

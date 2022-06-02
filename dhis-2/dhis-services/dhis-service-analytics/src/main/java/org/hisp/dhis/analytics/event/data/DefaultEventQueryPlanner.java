@@ -142,7 +142,8 @@ public class DefaultEventQueryPlanner
             ? PartitionUtils.getPartitions( params.getStartDate(), params.getEndDate() )
             : PartitionUtils.getPartitions( params.getAllPeriods() );
 
-        String baseName = params.hasEnrollmentProgramIndicatorDimension() ? AnalyticsTableType.ENROLLMENT.getTableName()
+        String baseName = params.hasEnrollmentProgramIndicatorDimension()
+            ? AnalyticsTableType.ENROLLMENT.getTableName()
             : AnalyticsTableType.EVENT.getTableName();
 
         String tableName = PartitionUtils.getTableName( baseName, params.getProgram() );

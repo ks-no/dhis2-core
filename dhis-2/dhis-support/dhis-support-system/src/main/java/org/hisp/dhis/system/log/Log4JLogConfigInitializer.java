@@ -32,6 +32,7 @@ import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 import java.io.File;
 import java.util.List;
+import java.util.zip.Deflater;
 
 import javax.annotation.PostConstruct;
 
@@ -41,6 +42,7 @@ import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.appender.RollingFileAppender;
+import org.apache.logging.log4j.core.appender.rolling.CronTriggeringPolicy;
 import org.apache.logging.log4j.core.appender.rolling.DefaultRolloverStrategy;
 import org.apache.logging.log4j.core.appender.rolling.SizeBasedTriggeringPolicy;
 import org.apache.logging.log4j.core.config.AppenderRef;
@@ -86,7 +88,9 @@ public class Log4JLogConfigInitializer
 
     private static final String PUSH_ANALYSIS_LOGGER_FILENAME = "dhis-push-analysis.log";
 
-    private static final String LOG4J_CONF_PROP = "log4j.configuration";
+    private static final String AUDIT_LOGGER_FILENAME = "dhis-audit.log";
+
+    private static final String LOG4J_CONF_PROP = "log4j2.configurationFile";
 
     private final LocationManager locationManager;
 
@@ -104,16 +108,16 @@ public class Log4JLogConfigInitializer
     @Override
     public void initConfig()
     {
-        if ( !locationManager.externalDirectorySet() )
-        {
-            log.warn( "Could not initialize additional log configuration, external home directory not set" );
-            return;
-        }
-
         if ( isNotBlank( System.getProperty( LOG4J_CONF_PROP ) ) )
         {
             log.info( "Aborting default log config, external config set through system prop " + LOG4J_CONF_PROP + ": "
                 + System.getProperty( LOG4J_CONF_PROP ) );
+            return;
+        }
+
+        if ( !locationManager.externalDirectorySet() )
+        {
+            log.warn( "Could not initialize additional log configuration, external home directory not set" );
             return;
         }
 
@@ -134,10 +138,53 @@ public class Log4JLogConfigInitializer
 
         configureLoggers( PUSH_ANALYSIS_LOGGER_FILENAME, Lists.newArrayList( "org.hisp.dhis.pushanalysis" ) );
 
+        configureAuditLogger( AUDIT_LOGGER_FILENAME, Lists.newArrayList( "org.hisp.dhis.audit" ) );
+
         configureRootLogger( GENERAL_LOGGER_FILENAME );
 
         final LoggerContext ctx = (LoggerContext) LogManager.getContext( false );
         ctx.updateLoggers();
+    }
+
+    /**
+     * Configures rolling audit file loggers.
+     *
+     * @param filename the filename to output logging to.
+     * @param packages the logger names.
+     */
+    private void configureAuditLogger( String filename, List<String> packages )
+    {
+        String file = getLogFile( filename );
+
+        RollingFileAppender appender = RollingFileAppender.newBuilder()
+            .withFileName( file )
+            .setName( "appender_" + file )
+            .withFilePattern( file + ".%i" )
+            .setLayout( PATTERN_LAYOUT )
+            .withPolicy( CronTriggeringPolicy.createPolicy( getLogConfiguration(), "true", "0 0 * * *" ) )
+            .withStrategy( DefaultRolloverStrategy.newBuilder()
+                .withCompressionLevelStr( String.valueOf( Deflater.BEST_COMPRESSION ) )
+                .withFileIndex( "nomax" )
+                .build() )
+            .build();
+
+        appender.start();
+
+        getLogConfiguration().addAppender( appender );
+
+        AppenderRef[] refs = createAppenderRef( "Ref_" + filename );
+
+        for ( String loggerName : packages )
+        {
+            LoggerConfig loggerConfig = LoggerConfig.createLogger( true, Level.INFO, loggerName, "true", refs, null,
+                getLogConfiguration(), null );
+
+            loggerConfig.addAppender( appender, null, null );
+
+            getLogConfiguration().addLogger( loggerName, loggerConfig );
+
+            log.info( "Added logger: " + loggerName + " using file: " + file );
+        }
     }
 
     /**

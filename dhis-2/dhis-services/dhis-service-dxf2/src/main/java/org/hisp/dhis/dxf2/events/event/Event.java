@@ -37,6 +37,7 @@ import org.hisp.dhis.common.DxfNamespaces;
 import org.hisp.dhis.dxf2.events.enrollment.EnrollmentStatus;
 import org.hisp.dhis.dxf2.events.trackedentity.Relationship;
 import org.hisp.dhis.event.EventStatus;
+import org.hisp.dhis.program.ProgramType;
 import org.hisp.dhis.program.UserInfoSnapshot;
 import org.locationtech.jts.geom.Geometry;
 
@@ -63,6 +64,8 @@ public class Event
 
     private String program;
 
+    private ProgramType programType;
+
     private String programStage;
 
     private String enrollment;
@@ -75,7 +78,7 @@ public class Event
 
     private String trackedEntityInstance;
 
-    private Set<Relationship> relationships;
+    private Set<Relationship> relationships = new HashSet<>();
 
     private String eventDate;
 
@@ -190,6 +193,18 @@ public class Event
     public void setProgram( String program )
     {
         this.program = program;
+    }
+
+    @JsonProperty( required = true )
+    @JacksonXmlProperty( isAttribute = true )
+    public ProgramType getProgramType()
+    {
+        return programType;
+    }
+
+    public void setProgramType( ProgramType programType )
+    {
+        this.programType = programType;
     }
 
     @JsonProperty( required = true )

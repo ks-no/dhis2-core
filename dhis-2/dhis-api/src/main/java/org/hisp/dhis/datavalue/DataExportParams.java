@@ -32,6 +32,7 @@ import static org.hisp.dhis.common.OrganisationUnitSelectionMode.SELECTED;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
 
 import org.hisp.dhis.category.CategoryOption;
 import org.hisp.dhis.category.CategoryOptionCombo;
@@ -84,6 +85,8 @@ public class DataExportParams
 
     private boolean orderByOrgUnitPath;
 
+    private boolean orderByPeriod;
+
     private Set<OrganisationUnitGroup> organisationUnitGroups = new HashSet<>();
 
     private Set<CategoryOptionCombo> attributeOptionCombos = new HashSet<>();
@@ -102,7 +105,7 @@ public class DataExportParams
 
     private IdSchemes outputIdSchemes;
 
-    private DeflatedDataValueConsumer callback;
+    private BlockingQueue<DeflatedDataValue> blockingQueue;
 
     // -------------------------------------------------------------------------
     // Constructors
@@ -200,9 +203,9 @@ public class DataExportParams
         return orgUnitLevel != null;
     }
 
-    public boolean hasCallback()
+    public boolean hasBlockingQueue()
     {
-        return callback != null;
+        return blockingQueue != null;
     }
 
     public OrganisationUnit getFirstOrganisationUnit()
@@ -274,6 +277,7 @@ public class DataExportParams
             .add( "org unit level", orgUnitLevel )
             .add( "children", includeChildren )
             .add( "order by org unit path", orderByOrgUnitPath )
+            .add( "order by period", orderByPeriod )
             .add( "org unit groups", organisationUnitGroups )
             .add( "attribute option combos", attributeOptionCombos )
             .add( "category option dimension constraints", coDimensionConstraints )
@@ -283,7 +287,7 @@ public class DataExportParams
             .add( "last updated duration", lastUpdatedDuration )
             .add( "limit", limit )
             .add( "output id schemes", outputIdSchemes )
-            .add( "callback", callback )
+            .add( "blockingQueue", blockingQueue )
             .toString();
     }
 
@@ -445,6 +449,17 @@ public class DataExportParams
         return this;
     }
 
+    public boolean isOrderByPeriod()
+    {
+        return orderByPeriod;
+    }
+
+    public DataExportParams setOrderByPeriod( boolean orderByPeriod )
+    {
+        this.orderByPeriod = orderByPeriod;
+        return this;
+    }
+
     public Set<OrganisationUnitGroup> getOrganisationUnitGroups()
     {
         return organisationUnitGroups;
@@ -544,14 +559,14 @@ public class DataExportParams
         return this;
     }
 
-    public DeflatedDataValueConsumer getCallback()
+    public BlockingQueue<DeflatedDataValue> getBlockingQueue()
     {
-        return callback;
+        return blockingQueue;
     }
 
-    public DataExportParams setCallback( DeflatedDataValueConsumer callback )
+    public DataExportParams setBlockingQueue( BlockingQueue<DeflatedDataValue> blockingQueue )
     {
-        this.callback = callback;
+        this.blockingQueue = blockingQueue;
         return this;
     }
 }

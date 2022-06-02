@@ -27,11 +27,13 @@
  */
 package org.hisp.dhis.query;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static java.util.Collections.emptyList;
+import static java.util.Collections.singletonList;
+import static org.junit.Assert.*;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
 
 import org.hisp.dhis.TransactionalIntegrationTest;
 import org.hisp.dhis.common.IdentifiableObject;
@@ -39,6 +41,7 @@ import org.hisp.dhis.common.IdentifiableObjectManager;
 import org.hisp.dhis.common.ValueType;
 import org.hisp.dhis.dataelement.DataElement;
 import org.hisp.dhis.dataelement.DataElementGroup;
+import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.query.operators.MatchMode;
 import org.hisp.dhis.schema.Schema;
 import org.hisp.dhis.schema.SchemaService;
@@ -77,43 +80,12 @@ public class CriteriaQueryEngineTest extends TransactionalIntegrationTest
     public void createDataElements()
     {
         userService = _userService;
-        DataElement dataElementA = createDataElement( 'A' );
-        dataElementA.setValueType( ValueType.NUMBER );
-        dataElementA.setName( "dataElementA" );
-
-        DataElement dataElementB = createDataElement( 'B' );
-        dataElementB.setValueType( ValueType.BOOLEAN );
-        dataElementB.setName( "dataElementB" );
-
-        DataElement dataElementC = createDataElement( 'C' );
-        dataElementC.setValueType( ValueType.INTEGER );
-        dataElementC.setName( "dataElementC" );
-
-        DataElement dataElementD = createDataElement( 'D' );
-        dataElementD.setValueType( ValueType.NUMBER );
-        dataElementD.setName( "dataElementD" );
-
-        DataElement dataElementE = createDataElement( 'E' );
-        dataElementE.setValueType( ValueType.BOOLEAN );
-        dataElementE.setName( "dataElementE" );
-
-        DataElement dataElementF = createDataElement( 'F' );
-        dataElementF.setValueType( ValueType.INTEGER );
-        dataElementF.setName( "dataElementF" );
-
-        dataElementA.setCreated( Year.parseYear( "2001" ).getStart() );
-        dataElementB.setCreated( Year.parseYear( "2002" ).getStart() );
-        dataElementC.setCreated( Year.parseYear( "2003" ).getStart() );
-        dataElementD.setCreated( Year.parseYear( "2004" ).getStart() );
-        dataElementE.setCreated( Year.parseYear( "2005" ).getStart() );
-        dataElementF.setCreated( Year.parseYear( "2006" ).getStart() );
-
-        identifiableObjectManager.save( dataElementB );
-        identifiableObjectManager.save( dataElementE );
-        identifiableObjectManager.save( dataElementA );
-        identifiableObjectManager.save( dataElementC );
-        identifiableObjectManager.save( dataElementF );
-        identifiableObjectManager.save( dataElementD );
+        DataElement dataElementA = addDataElement( 'A', ValueType.NUMBER, "2001" );
+        DataElement dataElementB = addDataElement( 'B', ValueType.BOOLEAN, "2002" );
+        DataElement dataElementC = addDataElement( 'C', ValueType.INTEGER, "2003" );
+        DataElement dataElementD = addDataElement( 'D', ValueType.NUMBER, "2004" );
+        DataElement dataElementE = addDataElement( 'E', ValueType.BOOLEAN, "2005" );
+        DataElement dataElementF = addDataElement( 'F', ValueType.INTEGER, "2006" );
 
         DataElementGroup dataElementGroupA = createDataElementGroup( 'A' );
         dataElementGroupA.addDataElement( dataElementA );
@@ -127,6 +99,21 @@ public class CriteriaQueryEngineTest extends TransactionalIntegrationTest
 
         identifiableObjectManager.save( dataElementGroupA );
         identifiableObjectManager.save( dataElementGroupB );
+    }
+
+    private DataElement addDataElement( char uniqueCharacter, ValueType type, String yearCreated )
+    {
+        return addDataElement( uniqueCharacter, "dataElement" + uniqueCharacter, type, yearCreated );
+    }
+
+    private DataElement addDataElement( char uniqueCharacter, String name, ValueType type, String yearCreated )
+    {
+        DataElement de = createDataElement( uniqueCharacter );
+        de.setValueType( type );
+        de.setName( name );
+        de.setCreated( Year.parseYear( yearCreated ).getStart() );
+        identifiableObjectManager.save( de );
+        return de;
     }
 
     private boolean collectionContainsUid( Collection<? extends IdentifiableObject> collection, String uid )
@@ -202,6 +189,46 @@ public class CriteriaQueryEngineTest extends TransactionalIntegrationTest
 
         assertEquals( 1, objects.size() );
         assertEquals( "deabcdefghF", objects.get( 0 ).getUid() );
+    }
+
+    @Test
+    public void getNotLikeQueryAll()
+    {
+        Query query = Query.from( schemaService.getDynamicSchema( DataElement.class ) );
+        query.add( Restrictions.notLike( "name", "G", MatchMode.ANYWHERE ) );
+        List<? extends IdentifiableObject> objects = queryEngine.query( query );
+
+        assertEquals( 6, objects.size() );
+    }
+
+    @Test
+    public void getNotILikeQueryAll()
+    {
+        Query query = Query.from( schemaService.getDynamicSchema( DataElement.class ) );
+        query.add( Restrictions.notLike( "name", "a", MatchMode.ANYWHERE ) );
+        List<? extends IdentifiableObject> objects = queryEngine.query( query );
+
+        assertEquals( 0, objects.size() );
+    }
+
+    @Test
+    public void getNotILikeQueryOne()
+    {
+        Query query = Query.from( schemaService.getDynamicSchema( DataElement.class ) );
+        query.add( Restrictions.notIlike( "name", "b", MatchMode.ANYWHERE ) );
+        List<? extends IdentifiableObject> objects = queryEngine.query( query );
+
+        assertEquals( 5, objects.size() );
+    }
+
+    @Test
+    public void getNotLikeQueryOne()
+    {
+        Query query = Query.from( schemaService.getDynamicSchema( DataElement.class ) );
+        query.add( Restrictions.notLike( "name", "A", MatchMode.ANYWHERE ) );
+        List<? extends IdentifiableObject> objects = queryEngine.query( query );
+
+        assertEquals( 5, objects.size() );
     }
 
     @Test
@@ -600,6 +627,18 @@ public class CriteriaQueryEngineTest extends TransactionalIntegrationTest
     }
 
     @Test
+    public void testUnicodeSearch()
+    {
+        addDataElement( 'U', "Кириллица", ValueType.NUMBER, "2021" );
+
+        Query query = queryService.getQueryFromUrl( DataElement.class, singletonList( "identifiable:token:Кири" ),
+            emptyList() );
+        List<? extends IdentifiableObject> matches = queryService.query( query );
+        assertEquals( 1, matches.size() );
+        assertEquals( "Кириллица", matches.get( 0 ).getName() );
+    }
+
+    @Test
     @Ignore
     public void testIdentifiableSearch8()
     {
@@ -699,6 +738,42 @@ public class CriteriaQueryEngineTest extends TransactionalIntegrationTest
         assertEquals( 0, queryEngine.count( query ) );
         assertEquals( 0, queryEngine.query( query ).size() );
 
+    }
+
+    @Test
+    public void testOrderByNonPersistedFieldNameAsc()
+    {
+        OrganisationUnit parent = createOrganisationUnit( "parent" );
+        identifiableObjectManager.save( parent );
+
+        OrganisationUnit child = createOrganisationUnit( "child" );
+        child.setParent( parent );
+        identifiableObjectManager.save( child );
+
+        Schema schema = schemaService.getDynamicSchema( OrganisationUnit.class );
+        Query query = Query.from( schema );
+        query.addOrder( Order.asc( schema.getProperty( "level" ) ) );
+        List<? extends IdentifiableObject> orgUnits = queryEngine.query( query );
+        assertEquals( "parent", orgUnits.get( 0 ).getName() );
+        assertEquals( "child", orgUnits.get( 1 ).getName() );
+    }
+
+    @Test
+    public void testOrderByNonPersistedFieldNameDesc()
+    {
+        OrganisationUnit parent = createOrganisationUnit( "parent" );
+        identifiableObjectManager.save( parent );
+
+        OrganisationUnit child = createOrganisationUnit( "child" );
+        child.setParent( parent );
+        identifiableObjectManager.save( child );
+
+        Schema schema = schemaService.getDynamicSchema( OrganisationUnit.class );
+        Query query = Query.from( schema );
+        query.addOrder( Order.desc( schema.getProperty( "level" ) ) );
+        List<? extends IdentifiableObject> orgUnits = queryEngine.query( query );
+        assertEquals( "child", orgUnits.get( 0 ).getName() );
+        assertEquals( "parent", orgUnits.get( 1 ).getName() );
     }
 
     @Override

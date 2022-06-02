@@ -28,8 +28,10 @@
 package org.hisp.dhis.system.util;
 
 import static org.apache.commons.lang3.StringUtils.trimToEmpty;
+import static org.hisp.dhis.system.util.MathUtils.parseDouble;
 
 import java.awt.geom.Point2D;
+import java.util.Date;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
@@ -642,24 +644,28 @@ public class ValidationUtils
     }
 
     /**
-     * Returns a value useful for substitution.
+     * Returns a typed value that can substitute for a null.
      *
      * @param valueType the value type.
-     * @return the object.
+     * @return the null replacement value.
      */
-    public static Object getSubstitutionValue( ValueType valueType )
+    public static Object getNullReplacementValue( ValueType valueType )
     {
-        if ( valueType.isNumeric() || valueType.isBoolean() )
+        if ( valueType.isNumeric() )
         {
-            return 1d;
+            return 0d;
+        }
+        else if ( valueType.isBoolean() )
+        {
+            return false;
         }
         else if ( valueType.isDate() )
         {
-            return "2000-01-01";
+            return new Date();
         }
         else
         {
-            return "A";
+            return "";
         }
     }
 
@@ -686,6 +692,38 @@ public class ValidationUtils
         }
 
         return bool;
+    }
+
+    /**
+     * Returns the value of a datavalue as an Object, if it is numeric, boolean,
+     * text, or date. (Date returns as String.) Otherwise returns null.
+     * <p>
+     * Other object types (e.g. File, Geo) return null for now rather than as a
+     * String, in case we decide to support them in the future as a different
+     * object type (or return a file's contents as a String).
+     *
+     * @param value the string value.
+     * @return the Object value.
+     */
+    public static Object getObjectValue( String value, ValueType valueType )
+    {
+        if ( value != null )
+        {
+            if ( valueType.isNumeric() )
+            {
+                return parseDouble( value );
+            }
+            else if ( valueType.isBoolean() )
+            {
+                return Boolean.parseBoolean( value );
+            }
+            else if ( valueType.isText() || valueType.isDate() )
+            {
+                return value;
+            }
+        }
+
+        return null;
     }
 
     /**

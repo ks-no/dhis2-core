@@ -60,10 +60,13 @@ import org.hisp.dhis.dataset.DataSetService;
 import org.hisp.dhis.dataset.Section;
 import org.hisp.dhis.dxf2.metadata.feedback.ImportReport;
 import org.hisp.dhis.dxf2.metadata.objectbundle.ObjectBundleMode;
+import org.hisp.dhis.eventreport.EventReport;
 import org.hisp.dhis.feedback.ErrorCode;
 import org.hisp.dhis.feedback.ErrorReport;
 import org.hisp.dhis.feedback.Status;
 import org.hisp.dhis.importexport.ImportStrategy;
+import org.hisp.dhis.mapping.MapView;
+import org.hisp.dhis.mapping.ThematicMapType;
 import org.hisp.dhis.node.NodeService;
 import org.hisp.dhis.node.types.RootNode;
 import org.hisp.dhis.program.Program;
@@ -453,6 +456,28 @@ public class MetadataImportServiceTest extends TransactionalIntegrationTest
         assertEquals( 2, dataSet.getTranslations().size() );
     }
 
+    @Test
+    public void testImportNewObjectWithDuplicateTranslations()
+        throws IOException
+    {
+        User user = createUser( "A", "ALL" );
+        manager.save( user );
+        Map<Class<? extends IdentifiableObject>, List<IdentifiableObject>> metadata = renderService.fromMetadata(
+            new ClassPathResource( "dxf2/dataelement_duplicate_translations.json" ).getInputStream(),
+            RenderFormat.JSON );
+
+        MetadataImportParams params = createParams( ImportStrategy.CREATE, metadata );
+        params.setSkipTranslation( false );
+        params.setUser( user );
+
+        ImportReport report = importService.importMetadata( params );
+        assertEquals( Status.ERROR, report.getStatus() );
+
+        assertTrue( report.getErrorReports().stream()
+            .filter( errorReport -> errorReport.getErrorCode() == ErrorCode.E1106 ).findFirst().isPresent() );
+
+    }
+
     /**
      * 1. Create object with 2 translations 2. Update object with empty
      * translations and skipTranslation = false Expected: updated object has
@@ -804,6 +829,12 @@ public class MetadataImportServiceTest extends TransactionalIntegrationTest
         ProgramStage programStage = program.getProgramStages().iterator().next();
         assertNotNull( programStage.getProgram() );
 
+        assertEquals( 3, programStage.getProgramStageDataElements().size() );
+        programStage.getProgramStageDataElements().forEach( psde -> {
+            assertNotNull( psde.getSkipAnalytics() );
+            assertFalse( psde.getSkipAnalytics() );
+        } );
+
         Set<ProgramStageSection> programStageSections = programStage.getProgramStageSections();
         assertNotNull( programStageSections );
         assertEquals( 2, programStageSections.size() );
@@ -1103,6 +1134,96 @@ public class MetadataImportServiceTest extends TransactionalIntegrationTest
 
         User user = manager.get( User.class, "MwhEJUnTHkn" );
         assertNotNull( user.getUserCredentials().getCreatedBy() );
+    }
+
+    @Test
+    public void testImportMapCreateAndUpdate()
+        throws IOException
+    {
+        java.util.Map<Class<? extends IdentifiableObject>, List<IdentifiableObject>> metadata = renderService
+            .fromMetadata(
+                new ClassPathResource( "dxf2/map_new.json" ).getInputStream(), RenderFormat.JSON );
+
+        MetadataImportParams params = new MetadataImportParams();
+        params.setImportMode( ObjectBundleMode.COMMIT );
+        params.setImportStrategy( ImportStrategy.CREATE );
+        params.setObjects( metadata );
+
+        ImportReport report = importService.importMetadata( params );
+        assertEquals( Status.OK, report.getStatus() );
+
+        List<org.hisp.dhis.mapping.Map> maps = manager.getAll( org.hisp.dhis.mapping.Map.class );
+        assertEquals( 1, maps.size() );
+        assertEquals( "test1", maps.get( 0 ).getName() );
+        assertEquals( 1, maps.get( 0 ).getMapViews().size() );
+
+        metadata = renderService.fromMetadata(
+            new ClassPathResource( "dxf2/map_update.json" ).getInputStream(), RenderFormat.JSON );
+
+        params = new MetadataImportParams();
+        params.setImportMode( ObjectBundleMode.COMMIT );
+        params.setImportStrategy( ImportStrategy.CREATE_AND_UPDATE );
+        params.setObjects( metadata );
+
+        report = importService.importMetadata( params );
+        assertEquals( Status.OK, report.getStatus() );
+
+        org.hisp.dhis.mapping.Map map = manager.get( org.hisp.dhis.mapping.Map.class, "LTNgXfzTFTv" );
+        assertNotNull( map );
+        assertEquals( 1, map.getMapViews().size() );
+
+        MapView mapView = map.getMapViews().get( 0 );
+        assertNotNull( mapView );
+        assertEquals( "#ddeeff", mapView.getNoDataColor() );
+        assertEquals( ThematicMapType.CHOROPLETH, mapView.getThematicMapType() );
+    }
+
+    /**
+     * Payload includes Program and ProgramStage with sharing settings.
+     * <p>
+     * Expected: after created, both Program and ProgramStage are saved
+     * correctly together with sharing settings.
+     */
+    @Test
+    public void testImportProgramWithProgramStageAndSharing()
+        throws IOException
+    {
+        User user = createUser( "A", "ALL" );
+        manager.save( user );
+
+        Map<Class<? extends IdentifiableObject>, List<IdentifiableObject>> metadata = renderService.fromMetadata(
+            new ClassPathResource( "dxf2/program_programStage_with_sharing.json" ).getInputStream(),
+            RenderFormat.JSON );
+
+        MetadataImportParams params = createParams( ImportStrategy.CREATE, metadata );
+        params.setSkipSharing( false );
+        params.setUser( user );
+
+        ImportReport report = importService.importMetadata( params );
+        assertEquals( Status.OK, report.getStatus() );
+
+        ProgramStage programStage = programStageService.getProgramStage( "oORy3Rg9hLE" );
+        assertEquals( 1, programStage.getSharing().getUserGroups().size() );
+
+        Program program = manager.get( "QIHW6CBdLsP" );
+        assertEquals( 1, program.getSharing().getUserGroups().size() );
+    }
+
+    @Test
+    public void testImportEventReportWithProgramIndicators()
+        throws IOException
+    {
+        Map<Class<? extends IdentifiableObject>, List<IdentifiableObject>> metadata = renderService.fromMetadata(
+            new ClassPathResource( "dxf2/eventreport_with_program_indicator.json" ).getInputStream(),
+            RenderFormat.JSON );
+        MetadataImportParams params = createParams( ImportStrategy.CREATE, metadata );
+        ImportReport report = importService.importMetadata( params );
+        assertEquals( Status.OK, report.getStatus() );
+
+        EventReport eventReport = manager.get( EventReport.class, "pCSijMNjMcJ" );
+        assertNotNull( eventReport.getProgramIndicatorDimensions() );
+        assertEquals( 1, eventReport.getProgramIndicatorDimensions().size() );
+        assertEquals( "Cl00ghs775c", eventReport.getProgramIndicatorDimensions().get( 0 ).getUid() );
     }
 
     private MetadataImportParams createParams( ImportStrategy importStrategy,
