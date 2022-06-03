@@ -121,7 +121,7 @@ pipeline {
 
         stage('Build and deploy') {
             when {
-                branch 'SMITTE-248_openshift'
+                branch '2.36.11.1_to_openshift'
             }
             steps {
                 build job: 'KS/dhis2-setup/to_openshift', parameters: [booleanParam(name: 'isTriggeredFromDhis2Core', value: true), string(name: 'tag_dhis2_core', value: env.GIT_SHA), string(name: 'branch_dhis2_core', value: env.GIT_BRANCH)], wait: true, propagate: false
