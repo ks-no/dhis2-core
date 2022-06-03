@@ -21,7 +21,6 @@ pipeline {
 
     environment {
         GIT_SHA = sh(returnStdout: true, script: 'git rev-parse HEAD').substring(0, 7)
-        GIT_BRANCH = sh(returnStdout: true, script: 'git rev-parse --abbrev-ref HEAD')
         WORKSPACE = pwd()
     }
 
@@ -35,9 +34,11 @@ pipeline {
                     env.VERSION = readFile "${env.WORKSPACE}/version"
                     env.CURRENT_VERSION = env.VERSION.replace("SNAPSHOT", env.GIT_SHA)
                     env.user = buildUser()
+                    env.GIT_BRANCH = sh(returnStdout: true, script: 'git rev-parse --abbrev-ref HEAD')
                 }
                 echo(""" 
                     GIT_BRANCH = ${env.GIT_BRANCH}
+                    GIT_SHA = ${env.GIT_SHA}
                     REPO_NAME = ${env.REPO_NAME}
                     user = ${env.user}
                     PATH = ${env.PATH}
