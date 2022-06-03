@@ -358,7 +358,7 @@ public class HibernateUserStore
         // Query parameters
         // ---------------------------------------------------------------------
 
-        log.debug( "User query HQL: '{}'", hql );
+        log.info( "User query HQL: '{}'", hql );
 
         Query query = getQuery( hql );
 
