@@ -71,7 +71,7 @@ pipeline {
                     rtMavenRun(
                         pom: 'dhis-2/pom.xml',
                         goals: "-T0.5C -U -B -s $MAVEN_SETTINGS clean install",
-                        opts: "${if (params.skipTests) '-DskipTests' else ''}",
+                        opts: "-DskipTests=${skipTests}",
                         resolverId: 'MAVEN_RESOLVER',
                         deployerId: "MAVEN_DEPLOYER",
                         tool: 'maven'
@@ -79,7 +79,7 @@ pipeline {
                     rtMavenRun(
                         pom: 'dhis-2/dhis-web/pom.xml',
                         goals: "-T0.5C -U -B -s $MAVEN_SETTINGS clean install",
-                        opts: "${if (params.skipTests) '-DskipTests' else ''}",
+                        opts: "-DskipTests=${skipTests}",
                         resolverId: 'MAVEN_RESOLVER',
                         deployerId: "MAVEN_DEPLOYER",
                         tool: 'maven'
@@ -102,7 +102,7 @@ pipeline {
         stage('Security check') {
             when {
                 anyOf {
-                    branch 'SMITTE-248_openshift'
+                    branch 'main_ks'
                 }
             }
             steps {
@@ -110,19 +110,13 @@ pipeline {
                     script {
                         sh "mvn -T0.5C -U -B sonar:sonar -f dhis-2/pom.xml -Dsonar.organization=ks-no ${if (params.skipTests) '-DskipTests' else ''}"
                     }
-//                    rtMavenRun (
-//                        pom: 'dhis-2/pom.xml',
-//                        goals: '-T0.5C -B sonar:sonar',
-//                        resolverId: "MAVEN_RESOLVER",
-//                        opts: "-Dsonar.organization=ks-no ${if (params.skipTests) '-DskipTests' else ''}"
-//                    )
                 }
             }
         }
 
         stage('Build and deploy') {
             when {
-                branch '2.36.11.1_to_openshift'
+                branch 'main_ks'
             }
             steps {
                 build job: 'KS/dhis2-setup/to_openshift', parameters: [booleanParam(name: 'isTriggeredFromDhis2Core', value: true), string(name: 'tag_dhis2_core', value: env.GIT_SHA), string(name: 'branch_dhis2_core', value: env.GIT_BRANCH)], wait: true, propagate: false
