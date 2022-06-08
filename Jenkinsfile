@@ -71,7 +71,7 @@ pipeline {
                     rtMavenRun(
                         pom: 'dhis-2/pom.xml',
                         goals: "-T0.5C -U -B -s $MAVEN_SETTINGS clean install",
-                        opts: "-DskipTests=${skipTests}",
+                        opts: "-DskipTests=${params.skipTests}",
                         resolverId: 'MAVEN_RESOLVER',
                         deployerId: "MAVEN_DEPLOYER",
                         tool: 'maven'
@@ -79,7 +79,7 @@ pipeline {
                     rtMavenRun(
                         pom: 'dhis-2/dhis-web/pom.xml',
                         goals: "-T0.5C -U -B -s $MAVEN_SETTINGS clean install",
-                        opts: "-DskipTests=${skipTests}",
+                        opts: "-DskipTests=${params.skipTests}",
                         resolverId: 'MAVEN_RESOLVER',
                         deployerId: "MAVEN_DEPLOYER",
                         tool: 'maven'
