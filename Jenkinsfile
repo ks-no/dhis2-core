@@ -119,7 +119,7 @@ pipeline {
                 branch 'main_ks'
             }
             steps {
-                build job: 'KS/dhis2-setup/to_openshift', parameters: [booleanParam(name: 'isTriggeredFromDhis2Core', value: true), string(name: 'tag_dhis2_core', value: env.GIT_SHA), string(name: 'branch_dhis2_core', value: env.GIT_BRANCH)], wait: true, propagate: false
+                build job: 'KS/dhis2-setup/master', parameters: [booleanParam(name: 'isTriggeredFromDhis2Core', value: true), string(name: 'tag_dhis2_core', value: env.GIT_SHA), string(name: 'branch_dhis2_core', value: env.GIT_BRANCH)], wait: true, propagate: false
             }
        }
     }
