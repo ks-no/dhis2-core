@@ -1,15 +1,15 @@
 [
-    "https://github.com/d2-ci/cache-cleaner-app#v100.1.4",
-    "https://github.com/d2-ci/dashboard-app#2.36.11",
-    "https://github.com/d2-ci/data-administration-app#2.36.11",
-    "https://github.com/d2-ci/data-visualizer-app#2.36.11",
-    "https://github.com/d2-ci/event-reports-app#2.36.11",
-    "https://github.com/d2-ci/import-export-app#2.36.11",
-    "https://github.com/d2-ci/maintenance-app#2.36.11",
-    "https://github.com/d2-ci/maps-app#2.36.11",
-    "https://github.com/d2-ci/sms-configuration-app#v100.0.5",
-    "https://github.com/d2-ci/settings-app#2.36.11",
+    "https://github.com/d2-ci/cache-cleaner-app#v100.1.7",
+    "https://github.com/d2-ci/dashboard-app#2.36.12",
+    "https://github.com/d2-ci/data-administration-app#2.36.12",
+    "https://github.com/d2-ci/data-visualizer-app#2.36.12",
+    "https://github.com/d2-ci/event-reports-app#2.36.12",
+    "https://github.com/d2-ci/import-export-app#2.36.12",
+    "https://github.com/d2-ci/maintenance-app#2.36.12",
+    "https://github.com/d2-ci/maps-app#2.36.12",
+    "https://github.com/d2-ci/sms-configuration-app#v100.0.11",
+    "https://github.com/d2-ci/settings-app#2.36.12",
     "https://github.com/d2-ci/tracker-capture-app#v34_ks",
-    "https://github.com/d2-ci/user-app#2.36.11",
-    "https://github.com/d2-ci/user-profile-app#2.36.11"
+    "https://github.com/d2-ci/user-app#2.36.12",
+    "https://github.com/d2-ci/user-profile-app#2.36.12"
 ]

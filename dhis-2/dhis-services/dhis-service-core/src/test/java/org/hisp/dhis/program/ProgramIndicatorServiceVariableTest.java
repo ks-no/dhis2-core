@@ -29,6 +29,7 @@ package org.hisp.dhis.program;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.startsWith;
+import static org.hisp.dhis.analytics.DataType.NUMERIC;
 import static org.junit.Assert.*;
 
 import java.util.Calendar;
@@ -99,14 +100,14 @@ public class ProgramIndicatorServiceVariableTest
     {
         piA.setExpression( expression );
 
-        return programIndicatorService.getAnalyticsSql( expression, piA, startDate, endDate );
+        return programIndicatorService.getAnalyticsSql( expression, NUMERIC, piA, startDate, endDate );
     }
 
     private String getSqlEnrollment( String expression )
     {
         piB.setExpression( expression );
 
-        return programIndicatorService.getAnalyticsSql( expression, piB, startDate, endDate );
+        return programIndicatorService.getAnalyticsSql( expression, NUMERIC, piB, startDate, endDate );
     }
 
     // -------------------------------------------------------------------------
@@ -305,10 +306,10 @@ public class ProgramIndicatorServiceVariableTest
         assertEquals( "0", getSqlEnrollment( "V{value_count}" ) );
 
         assertEquals(
-            "coalesce(\"TEAttribute\",'') + nullif(cast((case when \"TEAttribute\" is not null then 1 else 0 end) as double),0)",
+            "coalesce(\"TEAttribute\"::text,'') + nullif(cast((case when \"TEAttribute\" is not null then 1 else 0 end) as double),0)",
             getSql( "A{TEAttribute} + V{value_count}" ) );
         assertEquals(
-            "coalesce(\"TEAttribute\",'') + nullif(cast((case when \"TEAttribute\" is not null then 1 else 0 end) as double),0)",
+            "coalesce(\"TEAttribute\"::text,'') + nullif(cast((case when \"TEAttribute\" is not null then 1 else 0 end) as double),0)",
             getSqlEnrollment( "A{TEAttribute} + V{value_count}" ) );
     }
 
@@ -319,10 +320,10 @@ public class ProgramIndicatorServiceVariableTest
         assertEquals( "0", getSqlEnrollment( "V{zero_pos_value_count}" ) );
 
         assertEquals(
-            "coalesce(\"TEAttribute\",'') + nullif(cast((case when \"TEAttribute\" >= 0 then 1 else 0 end) as double),0)",
+            "coalesce(\"TEAttribute\"::text,'') + nullif(cast((case when \"TEAttribute\" >= 0 then 1 else 0 end) as double),0)",
             getSql( "A{TEAttribute} + V{zero_pos_value_count}" ) );
         assertEquals(
-            "coalesce(\"TEAttribute\",'') + nullif(cast((case when \"TEAttribute\" >= 0 then 1 else 0 end) as double),0)",
+            "coalesce(\"TEAttribute\"::text,'') + nullif(cast((case when \"TEAttribute\" >= 0 then 1 else 0 end) as double),0)",
             getSqlEnrollment( "A{TEAttribute} + V{zero_pos_value_count}" ) );
     }
 }

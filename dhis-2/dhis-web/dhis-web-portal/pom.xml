@@ -6,7 +6,7 @@
     <parent>
         <groupId>org.hisp.dhis</groupId>
         <artifactId>dhis-web</artifactId>
-        <version>2.36.11.1</version>
+        <version>2.36.12</version>
     </parent>
 
     <artifactId>dhis-web-portal</artifactId>
@@ -35,19 +35,19 @@
             <artifactId>dhis-web-api</artifactId>
         </dependency>
 
-<!--        <dependency>-->
-<!--            <groupId>org.hisp.dhis</groupId>-->
-<!--            <artifactId>dhis-web-dataentry</artifactId>-->
-<!--            <version>${project.version}</version>-->
-<!--            <type>war</type>-->
-<!--        </dependency>-->
+        <dependency>
+            <groupId>org.hisp.dhis</groupId>
+            <artifactId>dhis-web-dataentry</artifactId>
+            <version>${project.version}</version>
+            <type>war</type>
+        </dependency>
 
-<!--        <dependency>-->
-<!--            <groupId>org.hisp.dhis</groupId>-->
-<!--            <artifactId>dhis-web-approval</artifactId>-->
-<!--            <version>${project.version}</version>-->
-<!--            <type>war</type>-->
-<!--        </dependency>-->
+        <dependency>
+            <groupId>org.hisp.dhis</groupId>
+            <artifactId>dhis-web-approval</artifactId>
+            <version>${project.version}</version>
+            <type>war</type>
+        </dependency>
 
         <dependency>
             <groupId>org.hisp.dhis</groupId>
