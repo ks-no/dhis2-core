@@ -121,6 +121,11 @@ public class DhisOidcUserService
 
             if ( userCredentials != null )
             {
+                if ( userCredentials.isDisabled() || !userCredentials.isAccountNonExpired() )
+                {
+                    throw new OAuth2AuthenticationException( new OAuth2Error( "user_disabled" ),
+                            "User is disabled" );
+                }
                 return new DhisOidcUser( userCredentials, attributes, IdTokenClaimNames.SUB, oidcUser.getIdToken() );
             }
         }
