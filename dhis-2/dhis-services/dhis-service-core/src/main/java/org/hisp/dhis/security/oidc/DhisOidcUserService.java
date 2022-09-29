@@ -91,7 +91,8 @@ public class DhisOidcUserService
         String mappingLevelKey = oidcClientRegistration.getMappingClaimLevelKey();
         String mappingLevelRequiredValue = oidcClientRegistration.getMappingClaimLevelRequiredValue();
 
-        if( StringUtils.isNotBlank( mappingLevelKey ) && StringUtils.isNotBlank( mappingLevelRequiredValue ) ) {
+        if( StringUtils.isNotBlank( mappingLevelKey ) && StringUtils.isNotBlank( mappingLevelRequiredValue ) )
+        {
             Object claimLevelValue = attributes.get( mappingLevelKey );
             if ( claimLevelValue == null && userInfo != null )
             {
@@ -101,17 +102,17 @@ public class DhisOidcUserService
             if ( log.isDebugEnabled() )
             {
                 log.debug( String
-                        .format(
-                                "Trying to look up DHIS2 user with OidcUser mappingLevelKey='%s', claim value='%s'",
-                                mappingLevelKey, claimLevelValue ) );
+                    .format( "Trying to look up DHIS2 user with OidcUser mappingLevelKey='%s', claim value='%s'",
+                        mappingLevelKey, claimLevelValue ) );
             }
 
             if( ( null == claimLevelValue
-                    || !StringUtils.equals( String.valueOf( claimLevelValue ), mappingLevelRequiredValue ) ) ) {
+                || !StringUtils.equals( String.valueOf( claimLevelValue ), mappingLevelRequiredValue ) ) )
+            {
                 OAuth2Error oauth2Error = new OAuth2Error(
-                        "wrong_acr_lvl",
-                        "User logged in with wrong acr level",
-                        null );
+                    "wrong_acr_lvl",
+                    "User logged in with wrong acr level",
+                    null );
 
                 throw new OAuth2AuthenticationException( oauth2Error, oauth2Error.toString() );
             }
