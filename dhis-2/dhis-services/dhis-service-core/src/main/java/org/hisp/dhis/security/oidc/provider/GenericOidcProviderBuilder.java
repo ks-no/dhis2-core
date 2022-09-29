@@ -78,7 +78,7 @@ public class GenericOidcProviderBuilder extends AbstractOidcProvider
             .mappingClaimKey( StringUtils.defaultIfEmpty( config.get( MAPPING_CLAIM ), DEFAULT_MAPPING_CLAIM ) )
             .mappingClaimLevelKey( StringUtils.defaultIfEmpty( config.get( MAPPING_CLAIM_LEVEL ), "" ) )
             .mappingClaimLevelRequiredValue( StringUtils.defaultIfEmpty(
-                 config.get( MAPPING_CLAIM_LEVEL_REQUIRED_VALUE ), "" ) )
+                config.get( MAPPING_CLAIM_LEVEL_REQUIRED_VALUE ), "" ) )
             .loginIcon( StringUtils.defaultIfEmpty( config.get( LOGIN_IMAGE ), "" ) )
             .loginIconPadding( StringUtils.defaultIfEmpty( config.get( LOGIN_IMAGE_PADDING ), "0px 0px" ) )
             .loginText( StringUtils.defaultIfEmpty( config.get( DISPLAY_ALIAS ), providerId ) )

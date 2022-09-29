@@ -91,7 +91,7 @@ public class DhisOidcUserService
         String mappingLevelKey = oidcClientRegistration.getMappingClaimLevelKey();
         String mappingLevelRequiredValue = oidcClientRegistration.getMappingClaimLevelRequiredValue();
 
-        if( StringUtils.isNotBlank( mappingLevelKey ) && StringUtils.isNotBlank( mappingLevelRequiredValue ) )
+        if ( StringUtils.isNotBlank( mappingLevelKey ) && StringUtils.isNotBlank( mappingLevelRequiredValue ) )
         {
             Object claimLevelValue = attributes.get( mappingLevelKey );
             if ( claimLevelValue == null && userInfo != null )
@@ -106,8 +106,8 @@ public class DhisOidcUserService
                         mappingLevelKey, claimLevelValue ) );
             }
 
-            if( ( null == claimLevelValue
-                || !StringUtils.equals( String.valueOf( claimLevelValue ), mappingLevelRequiredValue ) ) )
+            if ( ( null == claimLevelValue
+                || !StringUtils.equals( String.valueOf( claimLevelValue ), mappingLevelRequiredValue )) )
             {
                 OAuth2Error oauth2Error = new OAuth2Error(
                     "wrong_acr_lvl",
@@ -127,7 +127,7 @@ public class DhisOidcUserService
                 if ( userCredentials.isDisabled() || !userCredentials.isAccountNonExpired() )
                 {
                     throw new OAuth2AuthenticationException( new OAuth2Error( "user_disabled" ),
-                            "User is disabled" );
+                        "User is disabled" );
                 }
                 return new DhisOidcUser( userCredentials, attributes, IdTokenClaimNames.SUB, oidcUser.getIdToken() );
             }
