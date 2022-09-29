@@ -28,6 +28,7 @@
 package org.hisp.dhis.security.oidc;
 
 import static org.hisp.dhis.external.conf.ConfigurationKey.OIDC_LOGOUT_REDIRECT_URL;
+import static org.hisp.dhis.external.conf.ConfigurationKey.STANDARD_LOGOUT_REDIRECT_URL;
 
 import java.io.IOException;
 
@@ -38,6 +39,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import lombok.extern.slf4j.Slf4j;
 
+import org.apache.commons.lang.StringUtils;
 import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
@@ -66,6 +68,12 @@ public class DhisOidcLogoutSuccessHandler implements LogoutSuccessHandler
         String logoutUri = dhisConfigurationProvider.getProperty( OIDC_LOGOUT_REDIRECT_URL );
         this.handler = new OidcClientInitiatedLogoutSuccessHandler( dhisOidcProviderRepository );
         this.handler.setPostLogoutRedirectUri( logoutUri );
+
+        String standardLogoutUri = dhisConfigurationProvider.getProperty( STANDARD_LOGOUT_REDIRECT_URL );
+        if ( StringUtils.isNotBlank( standardLogoutUri ) )
+        {
+            this.handler.setDefaultTargetUrl( standardLogoutUri );
+        }
     }
 
     @Override

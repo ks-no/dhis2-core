@@ -299,7 +299,7 @@ public class DhisWebApiWebSecurityConfig
                 } )
 
                 .oauth2Login( oauth2 -> oauth2
-                    .failureUrl( "/dhis-web-dashboard" )
+                    .failureUrl( "/dhis-web-commons/security/login.action?failed=true" )
                     .clientRegistrationRepository( dhisOidcProviderRepository )
                     .loginProcessingUrl( "/oauth2/code/*" )
                     .authorizationEndpoint()

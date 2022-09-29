@@ -31,6 +31,7 @@ import java.util.Map;
 
 import lombok.extern.slf4j.Slf4j;
 
+import org.apache.commons.lang.StringUtils;
 import org.hisp.dhis.user.UserCredentials;
 import org.hisp.dhis.user.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -87,12 +88,47 @@ public class DhisOidcUserService
                     mappingClaimKey, claimValue ) );
         }
 
+        String mappingLevelKey = oidcClientRegistration.getMappingClaimLevelKey();
+        String mappingLevelRequiredValue = oidcClientRegistration.getMappingClaimLevelRequiredValue();
+
+        if ( StringUtils.isNotBlank( mappingLevelKey ) && StringUtils.isNotBlank( mappingLevelRequiredValue ) )
+        {
+            Object claimLevelValue = attributes.get( mappingLevelKey );
+            if ( claimLevelValue == null && userInfo != null )
+            {
+                claimLevelValue = userInfo.getClaim( mappingLevelKey );
+            }
+
+            if ( log.isDebugEnabled() )
+            {
+                log.debug( String
+                    .format( "Trying to look up DHIS2 user with OidcUser mappingLevelKey='%s', claim value='%s'",
+                        mappingLevelKey, claimLevelValue ) );
+            }
+
+            if ( (null == claimLevelValue
+                || !StringUtils.equals( String.valueOf( claimLevelValue ), mappingLevelRequiredValue )) )
+            {
+                OAuth2Error oauth2Error = new OAuth2Error(
+                    "wrong_acr_lvl",
+                    "User logged in with wrong acr level",
+                    null );
+
+                throw new OAuth2AuthenticationException( oauth2Error, oauth2Error.toString() );
+            }
+        }
+
         if ( claimValue != null )
         {
             UserCredentials userCredentials = userService.getUserCredentialsByOpenId( (String) claimValue );
 
             if ( userCredentials != null )
             {
+                if ( userCredentials.isDisabled() || !userCredentials.isAccountNonExpired() )
+                {
+                    throw new OAuth2AuthenticationException( new OAuth2Error( "user_disabled" ),
+                        "User is disabled" );
+                }
                 return new DhisOidcUser( userCredentials, attributes, IdTokenClaimNames.SUB, oidcUser.getIdToken() );
             }
         }
