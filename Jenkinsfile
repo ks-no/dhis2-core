@@ -99,21 +99,6 @@ pipeline {
             }
         }
 
-        stage('Security check') {
-            when {
-                anyOf {
-                    branch 'main_ks'
-                }
-            }
-            steps {
-                withSonarQubeEnv('SonarCloud') {
-                    script {
-                        sh "mvn -T0.5C -U -B sonar:sonar -f dhis-2/pom.xml -Dsonar.organization=ks-no ${if (params.skipTests) '-DskipTests' else ''}"
-                    }
-                }
-            }
-        }
-
         stage('Build and deploy') {
             when {
                 branch 'main_ks'
