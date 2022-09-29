@@ -106,7 +106,7 @@ public class DhisOidcUserService
                         mappingLevelKey, claimLevelValue ) );
             }
 
-            if ( ( null == claimLevelValue
+            if ( (null == claimLevelValue
                 || !StringUtils.equals( String.valueOf( claimLevelValue ), mappingLevelRequiredValue )) )
             {
                 OAuth2Error oauth2Error = new OAuth2Error(
