@@ -101,11 +101,13 @@ public class DhisOidcUserService
             if ( log.isDebugEnabled() )
             {
                 log.debug( String
-                        .format( "Trying to look up DHIS2 user with OidcUser mapping mappingLevelKey='%s', claim value='%s'",
+                        .format(
+                                "Trying to look up DHIS2 user with OidcUser mappingLevelKey='%s', claim value='%s'",
                                 mappingLevelKey, claimLevelValue ) );
             }
 
-            if( ( null == claimLevelValue || !StringUtils.equals( String.valueOf( claimLevelValue ), mappingLevelRequiredValue ) ) ) {
+            if( ( null == claimLevelValue
+                    || !StringUtils.equals( String.valueOf( claimLevelValue ), mappingLevelRequiredValue ) ) ) {
                 OAuth2Error oauth2Error = new OAuth2Error(
                         "wrong_acr_lvl",
                         "User logged in with wrong acr level",
