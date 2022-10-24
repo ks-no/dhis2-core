@@ -54,6 +54,8 @@ class GenericOidcProviderBuilderConfigParserTest
         p.put( "oidc.provider.idporten.end_session_endpoint", "https://oidc-ver2.difi.no/endsession" );
         p.put( "oidc.provider.idporten.scopes", "pid" );
         p.put( "oidc.provider.idporten.mapping_claim", "helseid://claims/identity/pid" );
+        p.put( "oidc.provider.idporten.mapping_claim_level", "acr" );
+        p.put( "oidc.provider.idporten.mapping_claim_level_required_value", "Level4" );
         p.put( "oidc.provider.idporten.display_alias", "IdPorten" );
         p.put( "oidc.provider.idporten.enable_logout", "true" );
         p.put( "oidc.provider.idporten.login_image", "../oidc/idporten-logo.svg" );

@@ -41,6 +41,8 @@ import static org.hisp.dhis.security.oidc.provider.AbstractOidcProvider.JWK_URI;
 import static org.hisp.dhis.security.oidc.provider.AbstractOidcProvider.LOGIN_IMAGE;
 import static org.hisp.dhis.security.oidc.provider.AbstractOidcProvider.LOGIN_IMAGE_PADDING;
 import static org.hisp.dhis.security.oidc.provider.AbstractOidcProvider.MAPPING_CLAIM;
+import static org.hisp.dhis.security.oidc.provider.AbstractOidcProvider.MAPPING_CLAIM_LEVEL;
+import static org.hisp.dhis.security.oidc.provider.AbstractOidcProvider.MAPPING_CLAIM_LEVEL_REQUIRED_VALUE;
 import static org.hisp.dhis.security.oidc.provider.AbstractOidcProvider.PROVIDER_ID;
 import static org.hisp.dhis.security.oidc.provider.AbstractOidcProvider.REDIRECT_URL;
 import static org.hisp.dhis.security.oidc.provider.AbstractOidcProvider.SCOPES;
@@ -111,6 +113,8 @@ public final class GenericOidcProviderConfigParser
         builder.put( ENABLE_PKCE, Boolean.FALSE );
         builder.put( DISPLAY_ALIAS, Boolean.FALSE );
         builder.put( MAPPING_CLAIM, Boolean.FALSE );
+        builder.put( MAPPING_CLAIM_LEVEL, Boolean.FALSE );
+        builder.put( MAPPING_CLAIM_LEVEL_REQUIRED_VALUE, Boolean.FALSE );
         builder.put( END_SESSION_ENDPOINT, Boolean.FALSE );
         builder.put( SCOPES, Boolean.FALSE );
         builder.put( LOGIN_IMAGE, Boolean.FALSE );

@@ -46,6 +46,10 @@ public abstract class AbstractOidcProvider
 
     public static final String MAPPING_CLAIM = "mapping_claim";
 
+    public static final String MAPPING_CLAIM_LEVEL = "mapping_claim_level";
+
+    public static final String MAPPING_CLAIM_LEVEL_REQUIRED_VALUE = "mapping_claim_level_required_value";
+
     public static final String REDIRECT_URL = "redirect_url";
 
     public static final String AUTHORIZATION_URI = "authorization_uri";

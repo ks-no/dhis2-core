@@ -52,6 +52,10 @@ public class DhisOidcClientRegistration
 
     private final String mappingClaimKey;
 
+    private final String mappingClaimLevelKey;
+
+    private final String mappingClaimLevelRequiredValue;
+
     private final String loginIcon;
 
     private final String loginIconPadding;
