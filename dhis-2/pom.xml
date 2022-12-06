@@ -75,7 +75,7 @@
     <spring-hateoas.version>1.0.1.RELEASE</spring-hateoas.version>
     <spring-retry.version>1.2.4.RELEASE</spring-retry.version>
     <spring-restdocs-mockmvc.version>2.0.4.RELEASE</spring-restdocs-mockmvc.version>
-    <cache2k-api.version>1.6.0.Final</cache2k-api.version>
+    <cache2k-api.version>2.6.1.Final</cache2k-api.version>
     <lettuce.version>5.2.0.RELEASE</lettuce.version>
 
     <!--DBMS -->
